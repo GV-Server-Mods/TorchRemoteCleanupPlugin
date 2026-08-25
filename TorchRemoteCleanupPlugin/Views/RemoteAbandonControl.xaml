@@ -91,7 +91,7 @@
                                 <TextBlock Text="Controls beacon destruction and power state when a grid is abandoned." Foreground="#9CA3AF" FontSize="11" Margin="5,0,0,8"/>
                                 <CheckBox Content="Destroy Player Beacons (Owned or built by abandoning player)" IsChecked="{Binding Config.DestroyPlayerBeacons}" FontWeight="SemiBold"/>
                                 <CheckBox Content="Preserve Other Players' Beacons (Keeps scrap/claim beacons owned by other players/factions)" IsChecked="{Binding Config.PreserveOtherPlayerBeacons}"/>
-                                <CheckBox Content="Depower Grid On Abandon (Turn off batteries, reactors, and solar panels)" IsChecked="{Binding Config.DepowerGridOnAbandon}"/>
+                                <CheckBox Content="Depower Grid On Abandon (Turn off batteries, reactors, solar panels, engines, and wind turbines)" IsChecked="{Binding Config.DepowerGridOnAbandon}"/>
                             </StackPanel>
                         </GroupBox>
 
@@ -118,6 +118,7 @@
                             <StackPanel>
                                 <TextBlock Text="Prevent players from using Info Tab grid abandonment to combat-log or exploit limits." Foreground="#9CA3AF" FontSize="11" Margin="5,0,0,8"/>
                                 <CheckBox Content="Prevent Abandon In Combat (Block if hostile players are nearby)" IsChecked="{Binding Config.PreventAbandonInCombat}" FontWeight="SemiBold"/>
+                                <CheckBox Content="Prevent Abandon On Damage (Block if grid or subgrids took damage recently)" IsChecked="{Binding Config.PreventAbandonOnDamage}" FontWeight="SemiBold"/>
                                 
                                 <Grid Margin="0,5,0,0">
                                     <Grid.ColumnDefinitions>
@@ -127,13 +128,17 @@
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
                                     <Label Grid.Row="0" Grid.Column="0" Content="Combat Check Radius (Meters):"/>
                                     <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Config.CombatCheckRadius, StringFormat={}{0:F0}}"/>
 
-                                    <Label Grid.Row="1" Grid.Column="0" Content="Max Grid PCU Limit (0 = Unlimited):"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Config.MaxGridPCU}"/>
+                                    <Label Grid.Row="1" Grid.Column="0" Content="Damage Cooldown (Seconds):"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Config.DamageCooldownSeconds}"/>
+
+                                    <Label Grid.Row="2" Grid.Column="0" Content="Max Grid PCU Limit (0 = Unlimited):"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Config.MaxGridPCU}"/>
                                 </Grid>
                             </StackPanel>
                         </GroupBox>

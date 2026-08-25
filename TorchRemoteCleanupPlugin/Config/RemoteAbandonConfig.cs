@@ -25,6 +25,8 @@ namespace RemoteAbandon.Config
         // --- Combat & Anti-Exploit Restrictions ---
         private bool _preventAbandonInCombat = false;
         private float _combatCheckRadius = 3000.0f;
+        private bool _preventAbandonOnDamage = false;
+        private int _damageCooldownSeconds = 60;
         private int _maxGridPCU = 0; // 0 = unlimited
 
         // --- Player Notification ---
@@ -75,7 +77,7 @@ namespace RemoteAbandon.Config
             set => SetValue(ref _preserveOtherPlayerBeacons, value);
         }
 
-        [Display(Order = 7, Name = "Depower Grid On Abandon", GroupName = "Beacon Stripping", Description = "Turn off functional power blocks (reactors, batteries, solar panels) when grid is abandoned.")]
+        [Display(Order = 7, Name = "Depower Grid On Abandon", GroupName = "Beacon Stripping", Description = "Turn off all power producers (reactors, batteries, solar panels, wind turbines, hydrogen engines) when grid is abandoned.")]
         public bool DepowerGridOnAbandon
         {
             get => _depowerGridOnAbandon;
@@ -119,7 +121,21 @@ namespace RemoteAbandon.Config
             set => SetValue(ref _combatCheckRadius, Math.Max(100.0f, value));
         }
 
-        [Display(Order = 13, Name = "Max Grid PCU Limit", GroupName = "Combat & Anti-Exploit", Description = "Maximum PCU of a grid permitted to be remotely abandoned (0 = unlimited).")]
+        [Display(Order = 13, Name = "Prevent Abandon On Damage", GroupName = "Combat & Anti-Exploit", Description = "Block players from abandoning grids if the grid or connected subgrids took damage recently.")]
+        public bool PreventAbandonOnDamage
+        {
+            get => _preventAbandonOnDamage;
+            set => SetValue(ref _preventAbandonOnDamage, value);
+        }
+
+        [Display(Order = 14, Name = "Damage Cooldown (Seconds)", GroupName = "Combat & Anti-Exploit", Description = "Minimum elapsed seconds required after taking damage before a grid can be abandoned.")]
+        public int DamageCooldownSeconds
+        {
+            get => _damageCooldownSeconds;
+            set => SetValue(ref _damageCooldownSeconds, Math.Max(1, value));
+        }
+
+        [Display(Order = 15, Name = "Max Grid PCU Limit", GroupName = "Combat & Anti-Exploit", Description = "Maximum PCU of a grid permitted to be remotely abandoned (0 = unlimited).")]
         public int MaxGridPCU
         {
             get => _maxGridPCU;
@@ -127,14 +143,14 @@ namespace RemoteAbandon.Config
         }
 
         // --- Player Notification ---
-        [Display(Order = 14, Name = "Send Notification To Player", GroupName = "Notifications", Description = "Display on-screen HUD/chat notification to player when grid is abandoned.")]
+        [Display(Order = 16, Name = "Send Notification To Player", GroupName = "Notifications", Description = "Display on-screen HUD/chat notification to player when grid is abandoned.")]
         public bool SendNotificationToPlayer
         {
             get => _sendNotificationToPlayer;
             set => SetValue(ref _sendNotificationToPlayer, value);
         }
 
-        [Display(Order = 15, Name = "Notification Message Template", GroupName = "Notifications", Description = "Format string for player notification. {0} will be replaced with the Grid Name.")]
+        [Display(Order = 17, Name = "Notification Message Template", GroupName = "Notifications", Description = "Format string for player notification. {0} will be replaced with the Grid Name.")]
         public string NotificationMessage
         {
             get => _notificationMessage;

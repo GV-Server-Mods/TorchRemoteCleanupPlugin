@@ -54,7 +54,7 @@ graph TD
 | **Plugin Entry** | [`Plugin.cs`](TorchRemoteCleanupPlugin/Plugin.cs) | Main lifecycle controller (`TorchPluginBase`, `IWpfPlugin`). Manages persistent XML config, telemetry statistics, and lifecycle. |
 | **Config Model** | [`Config/RemoteAbandonConfig.cs`](TorchRemoteCleanupPlugin/Config/RemoteAbandonConfig.cs) | Persistent ViewModel containing all configurable toggles, combat radii, and messages with Torch `[Display]` annotations. |
 | **Statistics** | [`Services/RemoteAbandonStatistics.cs`](TorchRemoteCleanupPlugin/Services/RemoteAbandonStatistics.cs) | Thread-safe real-time telemetry tracking grids abandoned, subgrids handled, beacons destroyed, and PCU refunded. |
-| **Harmony Patch** | [`RemoteAbandonPatch.cs`](TorchRemoteCleanupPlugin/RemoteAbandonPatch.cs) | Prefix hook on `MyBlockLimits.RemoveBlocksBuiltByID` intercepting Info Tab grid deletion and executing abandonment. |
+| **Torch Patch** | [`RemoteAbandonPatch.cs`](TorchRemoteCleanupPlugin/RemoteAbandonPatch.cs) | Prefix hook on `MyBlockLimits.RemoveBlocksBuiltByID` intercepting Info Tab grid deletion and executing abandonment. |
 | **Commands** | [`Commands/RemoteAbandonCommands.cs`](TorchRemoteCleanupPlugin/Commands/RemoteAbandonCommands.cs) | In-game and console admin/player commands under the `!abandon` prefix. |
 | **WPF GUI View** | [`Views/RemoteAbandonControl.xaml`](TorchRemoteCleanupPlugin/Views/RemoteAbandonControl.xaml) | Dark-themed WPF interface with **Configuration** and **Live Telemetry** tabs. |
 | **Chat Utilities** | [`Utils/ChatUtils.cs`](TorchRemoteCleanupPlugin/Utils/ChatUtils.cs) | Helper for safely dispatching in-game HUD alerts and notifications to players. |
@@ -85,7 +85,7 @@ flowchart TD
 
 | Step | Action | Mechanism |
 | :---: | :--- | :--- |
-| **1** | **RPC Interception** | Hooks `MyBlockLimits.RemoveBlocksBuiltByID` with a Harmony prefix, preventing Keen's `grid.Close()` call. |
+| **1** | **RPC Interception** | Hooks `MyBlockLimits.RemoveBlocksBuiltByID` with a Torch PatchManager prefix, preventing Keen's `grid.Close()` call. |
 | **2** | **Combat Lockout Check** | If `PreventAbandonInCombat` is active, scans within `CombatCheckRadius` (default 3000m). If enemies are near, abandonment is denied. |
 | **3** | **Recursive Beacon Stripping** | Traverses mechanical and logical groups (rotors, hinges, pistons, connectors), destroying player beacons while preserving claim/scrap beacons. |
 | **4** | **Ownership & Power Reset** | Sets functional blocks to `Nobody` (`0L`) (or custom NPC ID) and optionally powers down batteries, reactors, and solar panels. |
@@ -145,6 +145,8 @@ The configuration file is saved automatically to `Torch\Plugins\Storage\RemoteAb
   <CustomOwnerIdentityId>0</CustomOwnerIdentityId>
   <PreventAbandonInCombat>false</PreventAbandonInCombat>
   <CombatCheckRadius>3000</CombatCheckRadius>
+  <PreventAbandonOnDamage>false</PreventAbandonOnDamage>
+  <DamageCooldownSeconds>60</DamageCooldownSeconds>
   <MaxGridPCU>0</MaxGridPCU>
   <SendNotificationToPlayer>true</SendNotificationToPlayer>
   <NotificationMessage>Grid '{0}' has been abandoned as a derelict. PCU refunded.</NotificationMessage>
@@ -161,12 +163,14 @@ The configuration file is saved automatically to `Torch\Plugins\Storage\RemoteAb
 | `WriteDedicatedLogFile` | `bool` | `true` | Appends all abandon events to `RemoteAbandon.log` in plugin storage. |
 | `DestroyPlayerBeacons` | `bool` | `true` | Destroys beacons built or owned by the abandoning player. |
 | `PreserveOtherPlayerBeacons` | `bool` | `true` | Keeps claim and scrap beacons owned by other identities/factions intact. |
-| `DepowerGridOnAbandon` | `bool` | `false` | Powers down batteries, reactors, and solar panels on abandon. |
+| `DepowerGridOnAbandon` | `bool` | `false` | Powers down all power producers (batteries, reactors, solar panels, wind turbines, hydrogen engines) on abandon. |
 | `ResetTerminalOwnershipToNobody` | `bool` | `true` | Wipes block ownership on terminal blocks to Nobody (`0L`). |
 | `TransferAuthorshipToNobody` | `bool` | `true` | Transfers block authorship away from player to refund PCU budget. |
 | `CustomOwnerIdentityId` | `long` | `0L` | Specific Identity ID (e.g. Scrap NPC) to receive ownership instead of Nobody (`0L`). |
 | `PreventAbandonInCombat` | `bool` | `false` | Blocks grid abandonment if enemy players are nearby. |
 | `CombatCheckRadius` | `float` | `3000.0` | Scan radius in meters for hostile entities. |
+| `PreventAbandonOnDamage` | `bool` | `false` | Blocks grid abandonment if the grid took damage recently. |
+| `DamageCooldownSeconds` | `int` | `60` | Delay in seconds after taking damage before grid can be abandoned. |
 | `MaxGridPCU` | `int` | `0` | Maximum PCU allowed to be abandoned (`0` = no limit). |
 | `SendNotificationToPlayer` | `bool` | `true` | Sends HUD on-screen alert to player upon abandonment. |
 | `NotificationMessage` | `string` | `...` | Custom message template with `{0}` placeholder for grid display name. |

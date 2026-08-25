@@ -73,6 +73,7 @@ namespace RemoteAbandon.Commands
             sb.AppendLine($"Transfer Authorship (Refund PCU): {cfg.TransferAuthorshipToNobody}");
             sb.AppendLine($"Custom Owner ID: {cfg.CustomOwnerIdentityId}");
             sb.AppendLine($"Prevent Abandon In Combat: {cfg.PreventAbandonInCombat} (Radius: {cfg.CombatCheckRadius:N0}m)");
+            sb.AppendLine($"Prevent Abandon On Damage: {cfg.PreventAbandonOnDamage} (Cooldown: {cfg.DamageCooldownSeconds}s)");
             sb.AppendLine($"Max Grid PCU Limit: {(cfg.MaxGridPCU > 0 ? cfg.MaxGridPCU.ToString() : "Unlimited")}");
             sb.AppendLine($"Send Player Notification: {cfg.SendNotificationToPlayer}");
             sb.AppendLine($"Notification Message: {cfg.NotificationMessage}");
@@ -201,6 +202,15 @@ namespace RemoteAbandon.Commands
                     case "combatcheckradius":
                         cfg.CombatCheckRadius = float.Parse(value);
                         break;
+                    case "damagecheck":
+                    case "preventabandonondamage":
+                    case "ondamage":
+                        cfg.PreventAbandonOnDamage = bool.Parse(value);
+                        break;
+                    case "damagecooldown":
+                    case "damagecooldownseconds":
+                        cfg.DamageCooldownSeconds = int.Parse(value);
+                        break;
                     case "maxpcu":
                     case "maxgridpcu":
                         cfg.MaxGridPCU = int.Parse(value);
@@ -214,7 +224,7 @@ namespace RemoteAbandon.Commands
                         cfg.NotificationMessage = value;
                         break;
                     default:
-                        Context.Respond($"Unknown setting '{property}'. Valid options: enabled, debug, logfile, playercommands, destroybeacons, preserveotherbeacons, depower, resetownership, transferauthorship, customownerid, combatcheck, combatradius, maxpcu, notify, message.");
+                        Context.Respond($"Unknown setting '{property}'. Valid options: enabled, debug, logfile, playercommands, destroybeacons, preserveotherbeacons, depower, resetownership, transferauthorship, customownerid, combatcheck, combatradius, damagecheck, damagecooldown, maxpcu, notify, message.");
                         return;
                 }
 

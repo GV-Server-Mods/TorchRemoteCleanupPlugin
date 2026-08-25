@@ -2,15 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using RemoteAbandon.Config;
+using RemoteAbandon.Services;
 using RemoteAbandon.Utils;
-using HarmonyLib;
 using NLog;
 using Sandbox.Engine.Multiplayer;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Blocks;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.World;
+using Torch.Managers.PatchManager;
 using VRage.Game;
 using VRage.Game.ModAPI;
 using VRage.Network;
@@ -18,15 +20,40 @@ using VRageMath;
 
 namespace RemoteAbandon
 {
-    [HarmonyPatch(typeof(MyBlockLimits), nameof(MyBlockLimits.RemoveBlocksBuiltByID))]
+    /// <summary>
+    /// Intercepts remote grid removal requests to convert them into derelict abandonments rather than immediate deletion.
+    /// </summary>
     public static class RemoteAbandonPatch
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
         /// <summary>
+        /// Registers the Torch prefix patch on Keen's <see cref="MyBlockLimits.RemoveBlocksBuiltByID"/> method.
+        /// </summary>
+        /// <param name="ctx">Torch patch context to register the prefix on.</param>
+        public static void Patch(PatchContext ctx)
+        {
+            try
+            {
+                var targetMethod = typeof(MyBlockLimits).GetMethod(nameof(MyBlockLimits.RemoveBlocksBuiltByID), BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (targetMethod != null)
+                {
+                    var prefixMethod = typeof(RemoteAbandonPatch).GetMethod(nameof(Prefix), BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                    ctx.GetPattern(targetMethod).Prefixes.Add(prefixMethod);
+                    Log.Info("Registered MyBlockLimits.RemoveBlocksBuiltByID prefix patch.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to patch MyBlockLimits.RemoveBlocksBuiltByID!");
+            }
+        }
+
+        /// <summary>
         /// Intercepts the player's 'X' (Remove) click in the Info Tab menu on the server.
         /// </summary>
-        [HarmonyPrefix]
+        /// <param name="gridEntityId">Entity ID of the root grid to abandon or remove.</param>
+        /// <returns>False to suppress Keen's default deletion routine and handle abandonment; true to fall back to vanilla deletion.</returns>
         public static bool Prefix(long gridEntityId)
         {
             try
@@ -68,46 +95,65 @@ namespace RemoteAbandon
                     return false;
                 }
 
-                // 4. Combat / Proximity Lockout check
-                if (config != null && config.PreventAbandonInCombat)
-                {
-                    Vector3D gridPos = rootGrid.PositionComp.GetPosition();
-                    double checkRadiusSq = config.CombatCheckRadius * config.CombatCheckRadius;
-                    bool enemyNearby = false;
-
-                    foreach (var player in MySession.Static.Players.GetOnlinePlayers())
-                    {
-                        if (player == null || player.Identity == null || player.Identity.IdentityId == senderIdentityId)
-                            continue;
-
-                        if (Vector3D.DistanceSquared(player.GetPosition(), gridPos) <= checkRadiusSq)
-                        {
-                            var relation = MyIDModule.GetRelationPlayerPlayer(senderIdentityId, player.Identity.IdentityId);
-                            if (relation.ToString().Equals("Enemies", StringComparison.OrdinalIgnoreCase))
-                            {
-                                enemyNearby = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (enemyNearby)
-                    {
-                        Plugin.Instance?.Statistics?.RecordCombatBlocked();
-                        Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' while enemy player is within {config.CombatCheckRadius}m combat radius.");
-                        if (config.SendNotificationToPlayer)
-                        {
-                            ChatUtils.SendNotificationToPlayer(senderSteamId, "Cannot abandon grid: Hostile players detected nearby!", font: MyFontEnum.Red);
-                        }
-                        return false;
-                    }
-                }
-
-                // 5. Collect the root grid and any attached subgrids (rotors, pistons, hinges)
+                // 4. Collect the root grid and any attached subgrids (rotors, pistons, hinges)
                 var logicalGroup = MyCubeGridGroups.Static.Logical.GetGroup(rootGrid);
                 List<MyCubeGrid> allGrids = logicalGroup != null
                     ? logicalGroup.Nodes.Select(n => n.NodeData).ToList()
                     : new List<MyCubeGrid> { rootGrid };
+
+                // 5. Combat & Anti-Exploit Restrictions
+                if (config != null)
+                {
+                    // 5a. Proximity Check (hostile players nearby)
+                    if (config.PreventAbandonInCombat)
+                    {
+                        Vector3D gridPos = rootGrid.PositionComp.GetPosition();
+                        double checkRadiusSq = config.CombatCheckRadius * config.CombatCheckRadius;
+                        bool enemyNearby = false;
+
+                        foreach (var player in MySession.Static.Players.GetOnlinePlayers())
+                        {
+                            if (player == null || player.Identity == null || player.Identity.IdentityId == senderIdentityId)
+                                continue;
+
+                            if (Vector3D.DistanceSquared(player.GetPosition(), gridPos) <= checkRadiusSq)
+                            {
+                                var relation = MyIDModule.GetRelationPlayerPlayer(senderIdentityId, player.Identity.IdentityId);
+                                if (relation.ToString().Equals("Enemies", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    enemyNearby = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (enemyNearby)
+                        {
+                            Plugin.Instance?.Statistics?.RecordCombatBlocked();
+                            Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' while enemy player is within {config.CombatCheckRadius}m combat radius.");
+                            if (config.SendNotificationToPlayer)
+                            {
+                                ChatUtils.SendNotificationToPlayer(senderSteamId, "Cannot abandon grid: Hostile players detected nearby!", font: MyFontEnum.Red);
+                            }
+                            return false;
+                        }
+                    }
+
+                    // 5b. Damage Cooldown Check (grid took damage recently)
+                    if (config.PreventAbandonOnDamage && config.DamageCooldownSeconds > 0)
+                    {
+                        if (DamageTracker.IsConstructInDamageCooldown(allGrids, config.DamageCooldownSeconds, out int remainingSeconds))
+                        {
+                            Plugin.Instance?.Statistics?.RecordCombatBlocked();
+                            Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' which took damage recently ({remainingSeconds}s cooldown remaining).");
+                            if (config.SendNotificationToPlayer)
+                            {
+                                ChatUtils.SendNotificationToPlayer(senderSteamId, $"Cannot abandon grid: Grid took damage recently! Please wait {remainingSeconds}s.", font: MyFontEnum.Red);
+                            }
+                            return false;
+                        }
+                    }
+                }
 
                 int totalBeaconsDestroyed = 0;
                 int totalPcuRefunded = 0;
@@ -155,17 +201,22 @@ namespace RemoteAbandon
                         }
                     }
 
-                    // B. Depower functional power blocks
+                    // B. Depower functional power blocks (Reactors, Batteries, Solar Panels, Wind Turbines, Hydrogen Engines, modded power blocks)
                     if (depowerGrid)
                     {
                         int depoweredCount = 0;
                         foreach (MySlimBlock slim in grid.CubeBlocks)
                         {
-                            if (slim.FatBlock is MyFunctionalBlock functional)
+                            if (slim.FatBlock is Sandbox.ModAPI.IMyPowerProducer powerProducer)
+                            {
+                                powerProducer.Enabled = false;
+                                depoweredCount++;
+                            }
+                            else if (slim.FatBlock is MyFunctionalBlock functional)
                             {
                                 string typeName = functional.GetType().Name;
-                                if (functional is MyBatteryBlock || functional is MyReactor ||
-                                    typeName.Contains("Solar") || typeName.Contains("Wind") || typeName.Contains("Generator"))
+                                if (typeName.Contains("Generator") || typeName.Contains("Solar") || typeName.Contains("Wind") || 
+                                    typeName.Contains("Reactor") || typeName.Contains("Engine") || typeName.Contains("Battery"))
                                 {
                                     functional.Enabled = false;
                                     depoweredCount++;

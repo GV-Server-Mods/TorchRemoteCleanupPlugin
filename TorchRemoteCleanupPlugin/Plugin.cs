@@ -7,21 +7,24 @@ using System.Windows.Controls;
 using RemoteAbandon.Config;
 using RemoteAbandon.Services;
 using RemoteAbandon.Views;
-using HarmonyLib;
 using NLog;
 using Torch;
 using Torch.API;
 using Torch.API.Plugins;
+using Torch.API.Session;
+using Torch.Managers.PatchManager;
 
 namespace RemoteAbandon
 {
+    /// <summary>
+    /// Core Torch plugin class for RemoteAbandon, handling lifecycle, configuration, and patch registration.
+    /// </summary>
     public class Plugin : TorchPluginBase, IWpfPlugin, INotifyPropertyChanged
     {
         public static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
         private Persistent<RemoteAbandonConfig> _config;
         private RemoteAbandonControl _control;
-        private Harmony _harmony;
 
         public static Plugin Instance { get; private set; }
 
@@ -34,6 +37,10 @@ namespace RemoteAbandon
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
+        /// <summary>
+        /// Initializes the plugin, loads persistent configuration, and applies Torch PatchManager patches.
+        /// </summary>
+        /// <param name="torch">The Torch server instance.</param>
         public override void Init(ITorchBase torch)
         {
             base.Init(torch);
@@ -44,16 +51,46 @@ namespace RemoteAbandon
 
             try
             {
-                _harmony = new Harmony("com.torch.remoteabandon");
-                _harmony.PatchAll(Assembly.GetExecutingAssembly());
-                Log.Info("Remote Abandon plugin initialized and Harmony patches applied successfully.");
+                var sessionManager = Torch.Managers.GetManager(typeof(ITorchSessionManager)) as ITorchSessionManager;
+                if (sessionManager != null)
+                {
+                    sessionManager.SessionStateChanged += OnSessionStateChanged;
+                }
+
+                var patchManager = Torch.Managers.GetManager(typeof(PatchManager)) as PatchManager;
+                if (patchManager != null)
+                {
+                    var ctx = patchManager.AcquireContext();
+                    RemoteAbandonPatch.Patch(ctx);
+                    patchManager.Commit();
+                    Log.Info("Remote Abandon plugin initialized and Torch patches applied successfully.");
+                }
+                else
+                {
+                    Log.Error("Torch PatchManager not found! Unable to register Remote Abandon patch.");
+                }
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Failed to apply Harmony patches for Remote Abandon!");
+                Log.Error(ex, "Failed to apply patches for Remote Abandon!");
             }
         }
 
+        private void OnSessionStateChanged(ITorchSession session, TorchSessionState newState)
+        {
+            if (newState == TorchSessionState.Loaded)
+            {
+                DamageTracker.Init();
+            }
+            else if (newState == TorchSessionState.Unloading)
+            {
+                DamageTracker.Cleanup();
+            }
+        }
+
+        /// <summary>
+        /// Loads the XML configuration from the plugin storage folder or creates default settings.
+        /// </summary>
         public void LoadConfig()
         {
             try
@@ -75,6 +112,9 @@ namespace RemoteAbandon
             OnPropertyChanged(nameof(Config));
         }
 
+        /// <summary>
+        /// Saves current configuration settings to disk.
+        /// </summary>
         public void SaveConfig()
         {
             try
@@ -88,23 +128,31 @@ namespace RemoteAbandon
             }
         }
 
+        /// <summary>
+        /// Returns the WPF user interface control for the Torch server UI.
+        /// </summary>
+        /// <returns>WPF UserControl for the plugin tab.</returns>
         public UserControl GetControl()
         {
             return _control ?? (_control = new RemoteAbandonControl(this));
         }
 
+        /// <summary>
+        /// Cleans up plugin resources and releases references upon server shutdown or plugin unload.
+        /// </summary>
         public override void Dispose()
         {
             try
             {
-                _harmony?.UnpatchAll("com.torch.remoteabandon");
-                Log.Info("Remote Abandon plugin unpatched.");
+                var sessionManager = Torch?.Managers?.GetManager(typeof(ITorchSessionManager)) as ITorchSessionManager;
+                if (sessionManager != null)
+                {
+                    sessionManager.SessionStateChanged -= OnSessionStateChanged;
+                }
             }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error unpatching Remote Abandon.");
-            }
+            catch { }
 
+            DamageTracker.Cleanup();
             Instance = null;
             base.Dispose();
         }
