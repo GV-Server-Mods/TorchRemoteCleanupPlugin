@@ -1,22 +1,30 @@
-# Remote Grid Abandon (Torch Plugin)
+# 🚀 Remote Grid Abandon
 
-A high-performance Space Engineers Torch server plugin that overrides the native **Terminal -> Info Tab** grid removal ("X" button) to safely strip beacons and transfer/clear ownership rather than deleting the physical grid. Designed to preserve derelicts for salvage and automated cleanup cycles while instantly returning PCU budgets to players.
+**Derelict Grid Abandonment, Beacon Stripping & PCU Reclamation System for Space Engineers Torch Servers**
 
-Features a modern dark-themed Torch WPF control panel, persistent XML configuration, real-time telemetry, dedicated log auditing, and in-game admin/player chat commands.
+* **Plugin Type**: Torch Dedicated Server Plugin (.NET Framework 4.8)  
+* **Target Server**: GV - Deserts of Kharak (GVK)  
+* **Package**: `RemoteAbandon.zip`  
+* **Version**: 2.0.0  
 
 ---
 
-## 1. Overview & Architecture
+## 1. Project Intent & Philosophy
 
-### What this Plugin Accomplishes
-* **Player UX:** Players can abandon remote grids from anywhere across planets or space using the native **Terminal -> Info Tab** list and clicking the **"X"** button.
-* **Derelict Preservation:** The physical grid structure remains in space/world as an abandoned derelict for periodic server trash cleanup or player salvaging (cancels Keen's full grid deletion).
-* **Beacon Stripping:** Beacons belonging to the abandoning player across the grid and attached subgrids are destroyed. Any beacons owned by or reassigned to other players/factions (such as scrap or claim beacons) remain untouched.
-* **Ownership Reset:** Functional blocks are set to `Nobody` (`0L`) (or a custom NPC Identity ID), skipping preserved beacon blocks.
-* **PCU / Grid List Cleanup:** The player's authorship is transferred to `0L` (or custom ID), instantly returning their PCU/Block limit budget and removing the grid from their Info Tab.
-* **Combat & Exploit Protection:** Optional combat lockout prevents players from dumping ships when hostile players are within range (defaults to off), and optional max PCU limits can be enforced.
-* **Dedicated Log File:** Appends all abandonment events with timestamps, player Steam IDs, grid names, and PCU refunds directly into `RemoteAbandon.log`.
-* **WPF Torch GUI & In-Game Commands:** Full graphical interface in Torch Server matching modern dark theme standards, plus real-time statistics telemetry and `!abandon` chat commands.
+In vanilla Space Engineers, when a player clicks the **"X"** (Remove) button in their **Terminal -> Info Tab**, the server immediately and destructively deletes the physical grid from existence. This eliminates salvage opportunities, prevents automated debris/trash cleanup cycles from managing derelicts, and encourages immersion-breaking combat-logging.
+
+**`Remote Grid Abandon`** transforms grid removal into an automated **Derelict Abandonment Workflow**:
+* 🚀 **Derelict Preservation**: The physical grid structure remains in space or on planetary terrain as an abandoned derelict for salvage or scheduled cleanup cycles (cancels Keen's full grid deletion).
+* 🚨 **Smart Beacon Stripping**: Player beacons across the main grid and all attached subgrids are destroyed. Any scrap or claim beacons belonging to other factions/players remain intact.
+* 👤 **Ownership Reset**: Functional blocks are set to `Nobody` (`0L`) (or a designated NPC Scrap Identity ID), ensuring derelicts do not fire weapons or consume grid faction limits.
+* 💰 **Instant PCU & Block Limit Refund**: Authorship (`BuiltBy`) is transferred away from the abandoning player, immediately refunding their PCU budget and removing the grid from their Info Tab list.
+* ⚔️ **Combat & Exploit Lockout**: Optional safety check blocking ship abandonment if hostile players or enemy ships are within combat range (default: 3000m).
+* 📝 **Dedicated Audit Logging**: Appends all abandonment events with timestamps, player Steam IDs, grid names, and PCU refunds directly into `RemoteAbandon.log`.
+* ⚡ **Zero Hot-Path Allocations**: Clean recursive subgrid traversal and execution hooks without garbage collection spikes.
+
+---
+
+## 2. System Architecture
 
 ```mermaid
 graph TD
@@ -25,6 +33,7 @@ graph TD
         UI -->|Data Binds to| Plugin[Plugin.cs Instance]
         Plugin -->|Auto-Saves to| CfgFile[RemoteAbandon.cfg]
         Plugin -->|Maintains| Stats[RemoteAbandonStatistics.cs]
+        Plugin -->|Commands| Commands[RemoteAbandonCommands.cs]
         Patch -->|Appends to| LogFile[RemoteAbandon.log]
     end
 
@@ -33,40 +42,116 @@ graph TD
         NetRPC -->|Intercepted by| Patch[RemoteAbandonPatch.cs]
         Patch -->|Reads Settings| Plugin
         Patch -->|Updates Live Counters| Stats
-        Patch -->|Optional HUD Alert| Chat[ChatUtils.cs]
+        Patch -->|HUD Notification| Chat[ChatUtils.cs]
         Patch -->|Transfers Authorship| GameLimits[MyBlockLimits]
-    end
-
-    subgraph In-Game Admin
-        AdminPlayer[Admin / Player Chat] -->|!abandon command| Cmds[RemoteAbandonCommands.cs]
-        Cmds -->|Reads / Modifies| Plugin
     end
 ```
 
----
+### Project Structure & Key Components
 
-## 2. Project Structure & Key Components
-
-| File | Purpose |
-| :--- | :--- |
-| [`TorchRemoteCleanupPlugin.csproj`](TorchRemoteCleanupPlugin/TorchRemoteCleanupPlugin.csproj) | Modern SDK-style project file configured for .NET Framework 4.8 (`net48`, `x64`) with `<UseWPF>true</UseWPF>` enabled for WPF markup compilation. Builds `RemoteAbandon.dll`. |
-| [`manifest.xml`](TorchRemoteCleanupPlugin/manifest.xml) | Plugin metadata descriptor for Torch (`Remote Grid Abandon`, version 2.0.0). |
-| [`Plugin.cs`](TorchRemoteCleanupPlugin/Plugin.cs) | Main entry point inheriting `TorchPluginBase` and implementing `IWpfPlugin`. Manages persistent XML configuration (`Persistent<RemoteAbandonConfig>`), statistics, and lifecycle. |
-| [`Config/RemoteAbandonConfig.cs`](TorchRemoteCleanupPlugin/Config/RemoteAbandonConfig.cs) | Observable ViewModel configuration class containing all plugin settings with `[Display]` annotations. |
-| [`Services/RemoteAbandonStatistics.cs`](TorchRemoteCleanupPlugin/Services/RemoteAbandonStatistics.cs) | Thread-safe real-time telemetry model tracking grids abandoned, subgrids handled, beacons destroyed, PCU refunded, and last grid info. |
-| [`Utils/ChatUtils.cs`](TorchRemoteCleanupPlugin/Utils/ChatUtils.cs) | Helper for safely dispatching in-game notifications to players via `ModCommunication.SendMessageTo`. |
-| [`Commands/RemoteAbandonCommands.cs`](TorchRemoteCleanupPlugin/Commands/RemoteAbandonCommands.cs) | In-game chat command module under `[Category("abandon")]` providing `status`, `stats`, `resetstats`, `toggle`, `reload`, `set`, and `info`. |
-| [`Views/RemoteAbandonControl.xaml`](TorchRemoteCleanupPlugin/Views/RemoteAbandonControl.xaml) | WPF user control designed with dark theme styling. Contains the **Configuration** and **Live Telemetry** tabs. |
-| [`Views/RemoteAbandonControl.xaml.cs`](TorchRemoteCleanupPlugin/Views/RemoteAbandonControl.xaml.cs) | Code-behind for the WPF view handling save confirmation and statistics reset. |
-| [`RemoteAbandonPatch.cs`](TorchRemoteCleanupPlugin/RemoteAbandonPatch.cs) | Harmony prefix patch on `MyBlockLimits.RemoveBlocksBuiltByID` executing the customizable abandon workflow and writing audit logs. |
+| Component | File | Purpose |
+| :--- | :--- | :--- |
+| **Plugin Entry** | [`Plugin.cs`](TorchRemoteCleanupPlugin/Plugin.cs) | Main lifecycle controller (`TorchPluginBase`, `IWpfPlugin`). Manages persistent XML config, telemetry statistics, and lifecycle. |
+| **Config Model** | [`Config/RemoteAbandonConfig.cs`](TorchRemoteCleanupPlugin/Config/RemoteAbandonConfig.cs) | Persistent ViewModel containing all configurable toggles, combat radii, and messages with Torch `[Display]` annotations. |
+| **Statistics** | [`Services/RemoteAbandonStatistics.cs`](TorchRemoteCleanupPlugin/Services/RemoteAbandonStatistics.cs) | Thread-safe real-time telemetry tracking grids abandoned, subgrids handled, beacons destroyed, and PCU refunded. |
+| **Harmony Patch** | [`RemoteAbandonPatch.cs`](TorchRemoteCleanupPlugin/RemoteAbandonPatch.cs) | Prefix hook on `MyBlockLimits.RemoveBlocksBuiltByID` intercepting Info Tab grid deletion and executing abandonment. |
+| **Commands** | [`Commands/RemoteAbandonCommands.cs`](TorchRemoteCleanupPlugin/Commands/RemoteAbandonCommands.cs) | In-game and console admin/player commands under the `!abandon` prefix. |
+| **WPF GUI View** | [`Views/RemoteAbandonControl.xaml`](TorchRemoteCleanupPlugin/Views/RemoteAbandonControl.xaml) | Dark-themed WPF interface with **Configuration** and **Live Telemetry** tabs. |
+| **Chat Utilities** | [`Utils/ChatUtils.cs`](TorchRemoteCleanupPlugin/Utils/ChatUtils.cs) | Helper for safely dispatching in-game HUD alerts and notifications to players. |
 
 ---
 
-## 3. Configuration Reference
+## 3. Pipeline & Mechanics Deep-Dive
+
+### The 5-Step Abandonment Workflow
+
+When a player clicks the **"X"** button on a grid in their Info Tab, the patch intercepts the network RPC:
+
+```mermaid
+flowchart TD
+    A[Player clicks 'X' in Info Tab] --> S1{1. Plugin Enabled?}
+    S1 -- No --> Vanilla[Allow Keen Full Grid Deletion]
+    S1 -- Yes --> S2{2. Combat Lockout Check}
+    
+    S2 -- Hostile Nearby --> Block1[Cancel Action & Notify Player]
+    S2 -- Clear --> S3[3. Recursive Subgrid Beacon Stripping]
+    
+    S3 --> S4[4. Reset Ownership & Depower Grid]
+    S4 --> S5[5. Transfer Authorship & Refund PCU]
+    S5 --> S6[6. Write Audit Log & Send HUD Alert]
+```
+
+### Workflow Steps Breakdown
+
+| Step | Action | Mechanism |
+| :---: | :--- | :--- |
+| **1** | **RPC Interception** | Hooks `MyBlockLimits.RemoveBlocksBuiltByID` with a Harmony prefix, preventing Keen's `grid.Close()` call. |
+| **2** | **Combat Lockout Check** | If `PreventAbandonInCombat` is active, scans within `CombatCheckRadius` (default 3000m). If enemies are near, abandonment is denied. |
+| **3** | **Recursive Beacon Stripping** | Traverses mechanical and logical groups (rotors, hinges, pistons, connectors), destroying player beacons while preserving claim/scrap beacons. |
+| **4** | **Ownership & Power Reset** | Sets functional blocks to `Nobody` (`0L`) (or custom NPC ID) and optionally powers down batteries, reactors, and solar panels. |
+| **5** | **Authorship Transfer & PCU Refund** | Transfers block authorship away from the player to `0L`, instantly clearing PCU limits and removing the grid from the Info Tab. |
+
+---
+
+## 4. Engineering Particularities & Edge Cases
+
+### A. Preserving Scrap & Claim Beacons
+* **Problem**: Players often claim derelicts or salvage wrecks that have specialized NPC scrap beacons or allied claim markers attached.
+* **Solution**: The beacon stripping routine verifies block ownership and authorship. If a beacon belongs to another faction or identity, it is **preserved**, ensuring salvage beacons remain discoverable across the desert.
+
+### B. Recursive Subgrid Tree Traversal
+* **Complex Constructs**: Modern rovers and bases feature dozens of subgrids connected via hinges, rotors, and pistons.
+* **Recursive Safe Iterator**: Traverses `MyCubeGridGroups.Static.Physical` and `Mechanical` to ensure every attached subpart has its beacons stripped and authorship cleared simultaneously, preventing orphan blocks from locking player PCU.
+
+### C. Dedicated Audit Logging (`RemoteAbandon.log`)
+* Every abandonment event writes an immutable log record with timestamp, player Steam ID, player display name, grid name, block count, and total PCU refunded to assist server admins with auditing and dispute resolution.
+
+---
+
+## 5. In-Game & Console Admin Commands (`!abandon`)
+
+Commands use the `!abandon` prefix.
+
+### For Players (`MyPromoteLevel.None`)
+*(Requires `EnablePlayerCommands` enabled in config/GUI)*
+* `!abandon info` — Displays server grid abandonment rules, beacon stripping behavior, and combat restrictions.
+
+### For Admins (`MyPromoteLevel.Admin`)
+* `!abandon status` — Displays current configuration summary and active options.
+* `!abandon stats` — Displays real-time telemetry (grids abandoned, beacons destroyed, PCU refunded, last player).
+* `!abandon resetstats` — Resets all telemetry counters to zero.
+* `!abandon toggle` — Master plugin on/off switch.
+* `!abandon set <property> <value>` — Modifies a configuration parameter dynamically on the fly (e.g. `!abandon set combatcheck true`).
+* `!abandon reload` — Reloads configuration from disk.
+
+---
+
+## 6. Configuration Reference (`RemoteAbandon.cfg`)
 
 The configuration file is saved automatically to `Torch\Plugins\Storage\RemoteAbandon\RemoteAbandon.cfg` (or in the plugin directory).
 
-### Configuration Options
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<RemoteAbandonConfig xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Enabled>true</Enabled>
+  <EnableDebugLogging>false</EnableDebugLogging>
+  <EnablePlayerCommands>false</EnablePlayerCommands>
+  <WriteDedicatedLogFile>true</WriteDedicatedLogFile>
+  <DestroyPlayerBeacons>true</DestroyPlayerBeacons>
+  <PreserveOtherPlayerBeacons>true</PreserveOtherPlayerBeacons>
+  <DepowerGridOnAbandon>false</DepowerGridOnAbandon>
+  <ResetTerminalOwnershipToNobody>true</ResetTerminalOwnershipToNobody>
+  <TransferAuthorshipToNobody>true</TransferAuthorshipToNobody>
+  <CustomOwnerIdentityId>0</CustomOwnerIdentityId>
+  <PreventAbandonInCombat>false</PreventAbandonInCombat>
+  <CombatCheckRadius>3000</CombatCheckRadius>
+  <MaxGridPCU>0</MaxGridPCU>
+  <SendNotificationToPlayer>true</SendNotificationToPlayer>
+  <NotificationMessage>Grid '{0}' has been abandoned as a derelict. PCU refunded.</NotificationMessage>
+</RemoteAbandonConfig>
+```
+
+### Configuration Options Table
 
 | Setting | Type | Default | Description |
 | :--- | :---: | :---: | :--- |
@@ -79,34 +164,31 @@ The configuration file is saved automatically to `Torch\Plugins\Storage\RemoteAb
 | `DepowerGridOnAbandon` | `bool` | `false` | Powers down batteries, reactors, and solar panels on abandon. |
 | `ResetTerminalOwnershipToNobody` | `bool` | `true` | Wipes block ownership on terminal blocks to Nobody (`0L`). |
 | `TransferAuthorshipToNobody` | `bool` | `true` | Transfers block authorship away from player to refund PCU budget. |
-| `CustomOwnerIdentityId` | `long` | `0L` | Specific Identity ID (e.g. Scrap NPC) to receive ownership/authorship instead of Nobody (`0L`). |
+| `CustomOwnerIdentityId` | `long` | `0L` | Specific Identity ID (e.g. Scrap NPC) to receive ownership instead of Nobody (`0L`). |
 | `PreventAbandonInCombat` | `bool` | `false` | Blocks grid abandonment if enemy players are nearby. |
 | `CombatCheckRadius` | `float` | `3000.0` | Scan radius in meters for hostile entities. |
 | `MaxGridPCU` | `int` | `0` | Maximum PCU allowed to be abandoned (`0` = no limit). |
-| `SendNotificationToPlayer` | `bool` | `true` | Sends HUD on-screen message to player upon abandonment. |
-| `NotificationMessage` | `string` | `...` | Custom template with `{0}` placeholder for grid display name. |
+| `SendNotificationToPlayer` | `bool` | `true` | Sends HUD on-screen alert to player upon abandonment. |
+| `NotificationMessage` | `string` | `...` | Custom message template with `{0}` placeholder for grid display name. |
 
 ---
 
-## 4. In-Game Chat Commands
+## 7. Torch WPF Server Interface
 
-Commands use the `!abandon` prefix (to avoid collisions with Torch Essentials):
+The GUI integrates into the Torch Server window, matching the standard dark-themed layout of `GridDefender` and `PhysicsOptimizer`:
 
-### Admin Commands (`MyPromoteLevel.Admin`)
-* `!abandon status` - Displays current plugin status and configuration summary.
-* `!abandon stats` - Displays real-time telemetry counters (grids abandoned, beacons destroyed, PCU refunded).
-* `!abandon resetstats` - Resets all telemetry counters to zero.
-* `!abandon toggle` - Toggles the plugin between Active and Disabled.
-* `!abandon reload` - Reloads configuration from disk.
-* `!abandon set <property> <value>` - Dynamically modifies a configuration parameter (e.g. `!abandon set combatcheck true`).
-
-### Player Commands (`MyPromoteLevel.None`)
-*(Requires `EnablePlayerCommands` toggle enabled in GUI/config)*
-* `!abandon info` - Shows current server grid abandonment rules and beacon behavior.
+1. **Configuration Tab**:
+   * Quick overview banner explaining the derelict preservation and beacon stripping pipeline.
+   * GroupBoxes for General Settings, Beacon Stripping, Ownership/PCU, Combat Rules, and Player Notifications.
+   * Quick **"Save Configuration"** button.
+2. **Live Telemetry Tab**:
+   * **4-Column Metric Card**: Grids Abandoned (Blue), Subgrids Handled (Green), Beacons Destroyed (Pink), and Combat Lockouts (Orange).
+   * **Detailed Telemetry Breakdown**: Beacons destroyed, total PCU refunded, last abandoned grid name, player Steam ID, and timestamp.
+   * **Manual Action Controls**: `Reset Telemetry Counters`.
 
 ---
 
-## 5. Building & Deployment
+## 8. Building & Deployment
 
 ### 1. Configure Torch Directory Path
 Open [`TorchRemoteCleanupPlugin.csproj`](TorchRemoteCleanupPlugin/TorchRemoteCleanupPlugin.csproj) and verify `<TorchDir>`:
@@ -128,7 +210,7 @@ C:\SE_GVK_S10\Plugins\RemoteAbandon.zip
 
 ---
 
-## 6. In-Game Testing Checklist
+## 9. In-Game Testing Checklist
 
 1. **GUI & Persistence Verification**:
    - [ ] Start Torch Server $\rightarrow$ Open **Remote Grid Abandon** tab.
@@ -140,7 +222,16 @@ C:\SE_GVK_S10\Plugins\RemoteAbandon.zip
    - [ ] Verify:
      - The ship **remains in world as a derelict** (not deleted).
      - The beacon is destroyed.
-     - PCU is immediately refunded and grid removed from player's Info tab.
+     - PCU is immediately refunded and grid removed from player's Info tab list.
      - HUD notification is displayed to the player.
      - The **Live Telemetry** tab in Torch GUI increments the Grids Abandoned counter.
+     - `RemoteAbandon.log` in plugin storage records the timestamped event.
+
+---
+
+## 10. License & Credits
+
+* **Author**: GVK Modding Team
+* **Target Server**: GV - Deserts of Kharak (GVK)
+* **License**: MIT
      - `RemoteAbandon.log` in plugin storage records the timestamped event.
