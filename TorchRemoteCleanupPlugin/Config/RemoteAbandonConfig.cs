@@ -31,7 +31,12 @@ namespace RemoteAbandon.Config
 
         // --- Player Notification ---
         private bool _sendNotificationToPlayer = true;
+        private bool _sendHudNotification = true;
+        private bool _sendChatNotification = true;
         private string _notificationMessage = "Grid '{0}' was abandoned as a derelict. PCU refunded.";
+        private string _combatBlockedMessage = "Cannot abandon grid '{0}': Hostile players detected within {1}m!";
+        private string _damageBlockedMessage = "Cannot abandon grid '{0}': Grid took damage recently! Please wait {1}s.";
+        private string _pcuBlockedMessage = "Cannot abandon grid '{0}': PCU exceeds limit ({1:N0} / {2:N0}).";
 
         // --- General Settings ---
         [Display(Order = 1, Name = "Enable Plugin", GroupName = "General", Description = "Master toggle for Remote Abandon override.")]
@@ -63,7 +68,7 @@ namespace RemoteAbandon.Config
         }
 
         // --- Beacon Stripping & Derelict Setup ---
-        [Display(Order = 5, Name = "Destroy Player Beacons", GroupName = "Beacon Stripping", Description = "Destroy beacons built or owned by the abandoning player.")]
+        [Display(Order = 5, Name = "Destroy Player Beacons (Main Plugin Feature)", GroupName = "Beacon Stripping", Description = "Destroy beacons built or owned by the abandoning player.")]
         public bool DestroyPlayerBeacons
         {
             get => _destroyPlayerBeacons;
@@ -135,7 +140,7 @@ namespace RemoteAbandon.Config
             set => SetValue(ref _damageCooldownSeconds, Math.Max(1, value));
         }
 
-        [Display(Order = 15, Name = "Max Grid PCU Limit", GroupName = "Combat & Anti-Exploit", Description = "Maximum PCU of a grid permitted to be remotely abandoned (0 = unlimited).")]
+        [Display(Order = 15, Name = "Max Grid PCU Limit", GroupName = "Combat & Anti-Exploit", Description = "Maximum PCU allowed to abandon (0 = unlimited). Prevents players from laundering PCU or dumping massive derelict lag bombs.")]
         public int MaxGridPCU
         {
             get => _maxGridPCU;
@@ -143,18 +148,53 @@ namespace RemoteAbandon.Config
         }
 
         // --- Player Notification ---
-        [Display(Order = 16, Name = "Send Notification To Player", GroupName = "Notifications", Description = "Display on-screen HUD/chat notification to player when grid is abandoned.")]
+        [Display(Order = 16, Name = "Enable Player Notifications", GroupName = "Notifications", Description = "Master toggle for feedback notifications to players on abandon attempts.")]
         public bool SendNotificationToPlayer
         {
             get => _sendNotificationToPlayer;
             set => SetValue(ref _sendNotificationToPlayer, value);
         }
 
-        [Display(Order = 17, Name = "Notification Message Template", GroupName = "Notifications", Description = "Format string for player notification. {0} will be replaced with the Grid Name.")]
+        [Display(Order = 17, Name = "Send On-Screen HUD Notification", GroupName = "Notifications", Description = "Display on-screen HUD toast notification to player.")]
+        public bool SendHudNotification
+        {
+            get => _sendHudNotification;
+            set => SetValue(ref _sendHudNotification, value);
+        }
+
+        [Display(Order = 18, Name = "Send In-Game Chat Message", GroupName = "Notifications", Description = "Send direct in-game chat message to player for persistent chat log history.")]
+        public bool SendChatNotification
+        {
+            get => _sendChatNotification;
+            set => SetValue(ref _sendChatNotification, value);
+        }
+
+        [Display(Order = 19, Name = "Abandon Success Message Template", GroupName = "Notifications", Description = "Format string for successful abandonment. {0} = Grid Name.")]
         public string NotificationMessage
         {
             get => _notificationMessage;
             set => SetValue(ref _notificationMessage, value);
+        }
+
+        [Display(Order = 20, Name = "Combat Blocked Message Template", GroupName = "Notifications", Description = "Format string when abandon is blocked by combat. {0} = Grid Name, {1} = Combat Radius.")]
+        public string CombatBlockedMessage
+        {
+            get => _combatBlockedMessage;
+            set => SetValue(ref _combatBlockedMessage, value);
+        }
+
+        [Display(Order = 21, Name = "Damage Cooldown Message Template", GroupName = "Notifications", Description = "Format string when abandon is blocked by damage. {0} = Grid Name, {1} = Seconds Remaining.")]
+        public string DamageBlockedMessage
+        {
+            get => _damageBlockedMessage;
+            set => SetValue(ref _damageBlockedMessage, value);
+        }
+
+        [Display(Order = 22, Name = "PCU Limit Exceeded Message Template", GroupName = "Notifications", Description = "Format string when grid exceeds max PCU. {0} = Grid Name, {1} = Grid PCU, {2} = Max PCU.")]
+        public string PcuBlockedMessage
+        {
+            get => _pcuBlockedMessage;
+            set => SetValue(ref _pcuBlockedMessage, value);
         }
     }
 }

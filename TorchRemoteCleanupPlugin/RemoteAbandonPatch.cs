@@ -88,18 +88,17 @@ namespace RemoteAbandon
                 if (config != null && config.MaxGridPCU > 0 && rootGrid.BlocksPCU > config.MaxGridPCU)
                 {
                     Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' exceeding max PCU limit ({rootGrid.BlocksPCU} > {config.MaxGridPCU}).");
-                    if (config.SendNotificationToPlayer)
-                    {
-                        ChatUtils.SendNotificationToPlayer(senderSteamId, $"Cannot abandon grid: PCU exceeds limit ({rootGrid.BlocksPCU} / {config.MaxGridPCU}).", font: MyFontEnum.Red);
-                    }
+                    string template = config.PcuBlockedMessage ?? "Cannot abandon grid '{0}': PCU exceeds limit ({1:N0} / {2:N0}).";
+                    string msg = string.Format(template, rootGrid.DisplayName, rootGrid.BlocksPCU, config.MaxGridPCU);
+                    ChatUtils.SendPlayerFeedback(config, senderSteamId, msg, isError: true);
                     return false;
                 }
 
                 // 4. Collect the root grid and any attached subgrids (rotors, pistons, hinges)
                 var logicalGroup = MyCubeGridGroups.Static.Logical.GetGroup(rootGrid);
                 List<MyCubeGrid> allGrids = logicalGroup != null
-                    ? logicalGroup.Nodes.Select(n => n.NodeData).ToList()
-                    : new List<MyCubeGrid> { rootGrid };
+                    ? [.. logicalGroup.Nodes.Select(n => n.NodeData)]
+                    : [rootGrid];
 
                 // 5. Combat & Anti-Exploit Restrictions
                 if (config != null)
@@ -131,10 +130,9 @@ namespace RemoteAbandon
                         {
                             Plugin.Instance?.Statistics?.RecordCombatBlocked();
                             Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' while enemy player is within {config.CombatCheckRadius}m combat radius.");
-                            if (config.SendNotificationToPlayer)
-                            {
-                                ChatUtils.SendNotificationToPlayer(senderSteamId, "Cannot abandon grid: Hostile players detected nearby!", font: MyFontEnum.Red);
-                            }
+                            string template = config.CombatBlockedMessage ?? "Cannot abandon grid '{0}': Hostile players detected within {1}m!";
+                            string msg = string.Format(template, rootGrid.DisplayName, (int)config.CombatCheckRadius);
+                            ChatUtils.SendPlayerFeedback(config, senderSteamId, msg, isError: true);
                             return false;
                         }
                     }
@@ -146,10 +144,9 @@ namespace RemoteAbandon
                         {
                             Plugin.Instance?.Statistics?.RecordCombatBlocked();
                             Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' which took damage recently ({remainingSeconds}s cooldown remaining).");
-                            if (config.SendNotificationToPlayer)
-                            {
-                                ChatUtils.SendNotificationToPlayer(senderSteamId, $"Cannot abandon grid: Grid took damage recently! Please wait {remainingSeconds}s.", font: MyFontEnum.Red);
-                            }
+                            string template = config.DamageBlockedMessage ?? "Cannot abandon grid '{0}': Grid took damage recently! Please wait {1}s.";
+                            string msg = string.Format(template, rootGrid.DisplayName, remainingSeconds);
+                            ChatUtils.SendPlayerFeedback(config, senderSteamId, msg, isError: true);
                             return false;
                         }
                     }
@@ -234,7 +231,7 @@ namespace RemoteAbandon
                         int ownershipResetCount = 0;
                         foreach (MySlimBlock slim in grid.CubeBlocks)
                         {
-                            if (slim.FatBlock is MyTerminalBlock terminalBlock && !(slim.FatBlock is MyBeacon))
+                            if (slim.FatBlock is MyTerminalBlock terminalBlock && slim.FatBlock is not MyBeacon)
                             {
                                 if (terminalBlock.OwnerId != 0L)
                                 {
@@ -255,7 +252,7 @@ namespace RemoteAbandon
                         grid.TransferBlocksBuiltByID(senderIdentityId, targetOwnerId);
 
                         MyMultiplayer.RaiseStaticEvent(
-                            (IMyEventOwner x) => MyBlockLimits.TransferBlocksBuiltByIDClient,
+                            _ => MyBlockLimits.TransferBlocksBuiltByIDClient,
                             grid.EntityId,
                             senderIdentityId,
                             targetOwnerId
@@ -302,11 +299,9 @@ namespace RemoteAbandon
                 }
 
                 // 8. Send notification to player
-                if (config?.SendNotificationToPlayer == true)
-                {
-                    string msg = string.Format(config.NotificationMessage ?? "Grid '{0}' was abandoned as a derelict. PCU refunded.", rootGrid.DisplayName);
-                    ChatUtils.SendNotificationToPlayer(senderSteamId, msg);
-                }
+                string successTemplate = config?.NotificationMessage ?? "Grid '{0}' was abandoned as a derelict. PCU refunded.";
+                string successMsg = string.Format(successTemplate, rootGrid.DisplayName);
+                ChatUtils.SendPlayerFeedback(config, senderSteamId, successMsg, isError: false);
 
                 // Return false: Cancels Keen's vanilla routine so the rest of the ship is NOT deleted!
                 return false;

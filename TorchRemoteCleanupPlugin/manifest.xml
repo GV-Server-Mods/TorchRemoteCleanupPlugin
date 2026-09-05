@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PluginManifest xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Guid>7c9e83b2-9d32-4e4b-9721-a15d8f638120</Guid>
-  <Version>2.0.0</Version>
+  <Version>1.0.0</Version>
   <Name>Remote Grid Abandon</Name>
   <Description>Overrides Info Tab grid removal to safely strip player beacons and leave grids as derelicts instead of deleting them.</Description>
   <Author>Torch Community</Author>

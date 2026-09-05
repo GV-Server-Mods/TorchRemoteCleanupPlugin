@@ -76,7 +76,12 @@ namespace RemoteAbandon.Commands
             sb.AppendLine($"Prevent Abandon On Damage: {cfg.PreventAbandonOnDamage} (Cooldown: {cfg.DamageCooldownSeconds}s)");
             sb.AppendLine($"Max Grid PCU Limit: {(cfg.MaxGridPCU > 0 ? cfg.MaxGridPCU.ToString() : "Unlimited")}");
             sb.AppendLine($"Send Player Notification: {cfg.SendNotificationToPlayer}");
-            sb.AppendLine($"Notification Message: {cfg.NotificationMessage}");
+            sb.AppendLine($"Send HUD Notification: {cfg.SendHudNotification}");
+            sb.AppendLine($"Send Chat Notification: {cfg.SendChatNotification}");
+            sb.AppendLine($"Abandon Success Message: {cfg.NotificationMessage}");
+            sb.AppendLine($"Combat Blocked Message: {cfg.CombatBlockedMessage}");
+            sb.AppendLine($"Damage Blocked Message: {cfg.DamageBlockedMessage}");
+            sb.AppendLine($"PCU Exceeded Message: {cfg.PcuBlockedMessage}");
 
             Context.Respond(sb.ToString());
         }
@@ -219,12 +224,32 @@ namespace RemoteAbandon.Commands
                     case "sendnotificationtoplayer":
                         cfg.SendNotificationToPlayer = bool.Parse(value);
                         break;
+                    case "hudnotify":
+                    case "sendhudnotification":
+                        cfg.SendHudNotification = bool.Parse(value);
+                        break;
+                    case "chatnotify":
+                    case "sendchatnotification":
+                        cfg.SendChatNotification = bool.Parse(value);
+                        break;
                     case "message":
                     case "notificationmessage":
                         cfg.NotificationMessage = value;
                         break;
+                    case "combatmessage":
+                    case "combatblockedmessage":
+                        cfg.CombatBlockedMessage = value;
+                        break;
+                    case "damagemessage":
+                    case "damageblockedmessage":
+                        cfg.DamageBlockedMessage = value;
+                        break;
+                    case "pcumessage":
+                    case "pcublockedmessage":
+                        cfg.PcuBlockedMessage = value;
+                        break;
                     default:
-                        Context.Respond($"Unknown setting '{property}'. Valid options: enabled, debug, logfile, playercommands, destroybeacons, preserveotherbeacons, depower, resetownership, transferauthorship, customownerid, combatcheck, combatradius, damagecheck, damagecooldown, maxpcu, notify, message.");
+                        Context.Respond($"Unknown setting '{property}'. Valid options: enabled, debug, logfile, playercommands, destroybeacons, preserveotherbeacons, depower, resetownership, transferauthorship, customownerid, combatcheck, combatradius, damagecheck, damagecooldown, maxpcu, notify, hudnotify, chatnotify, message, combatmessage, damagemessage, pcumessage.");
                         return;
                 }
 
