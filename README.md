@@ -4,7 +4,7 @@
 
 * **Plugin Type**: Torch Dedicated Server Plugin (.NET Framework 4.8)  
 * **Target Server**: GV - Deserts of Kharak (GVK)  
-* **Package**: `RemoteAbandon.zip`  
+* **Package**: `RemoteGridAbandon.zip`  
 
 ---
 
@@ -193,7 +193,7 @@ The GUI integrates into the Torch Server window, matching the standard dark-them
 1. **Configuration Tab**:
    * Quick overview banner explaining the derelict preservation and beacon stripping pipeline.
    * GroupBoxes for General Settings, Beacon Stripping, Ownership/PCU, Combat Rules, and Player Notifications.
-   * Quick **"Save Configuration"** button.
+   * Auto-applies changes immediately with a manual **"Save to Disk"** button.
 2. **Live Telemetry Tab**:
    * **4-Column Metric Card**: Grids Abandoned (Blue), Subgrids Handled (Green), Beacons Destroyed (Pink), and Combat Lockouts (Orange).
    * **Detailed Telemetry Breakdown**: Beacons destroyed, total PCU refunded, last abandoned grid name, player Steam ID, and timestamp.
@@ -215,7 +215,7 @@ dotnet build -c Release TorchRemoteCleanupPlugin\TorchRemoteCleanupPlugin.csproj
 ```
 The build automatically creates and deploys the zip archive:
 ```
-C:\SE_GVK_S10\Plugins\RemoteAbandon.zip
+C:\SE_GVK_S10\Plugins\RemoteGridAbandon.zip
 ├── RemoteAbandon.dll
 ├── RemoteAbandon.pdb
 └── manifest.xml
@@ -228,7 +228,7 @@ C:\SE_GVK_S10\Plugins\RemoteAbandon.zip
 1. **GUI & Persistence Verification**:
    - [ ] Start Torch Server $\rightarrow$ Open **Remote Grid Abandon** tab.
    - [ ] Verify both **Configuration** and **Live Telemetry** tabs are populated.
-   - [ ] Modify a setting (e.g. Enable Debug Logging) and click **Save Configuration**.
+   - [ ] Modify a setting (e.g. Enable Debug Logging) and verify changes auto-apply or click **Save to Disk**.
 2. **In-Game Functionality**:
    - [ ] Spawn a test grid with armor, thrusters, and a beacon.
    - [ ] Open Terminal $\rightarrow$ **Info Tab** $\rightarrow$ Click **"X"** on the test ship.
@@ -236,7 +236,7 @@ C:\SE_GVK_S10\Plugins\RemoteAbandon.zip
      - The ship **remains in world as a derelict** (not deleted).
      - The beacon is destroyed.
      - PCU is immediately refunded and grid removed from player's Info tab list.
-     - HUD notification is displayed to the player.
+     - Dual HUD notification and in-game chat message are received.
      - The **Live Telemetry** tab in Torch GUI increments the Grids Abandoned counter.
      - `RemoteAbandon.log` in plugin storage records the timestamped event.
 
@@ -247,4 +247,3 @@ C:\SE_GVK_S10\Plugins\RemoteAbandon.zip
 * **Author**: GVK Modding Team
 * **Target Server**: GV - Deserts of Kharak (GVK)
 * **License**: MIT
-     - `RemoteAbandon.log` in plugin storage records the timestamped event.
