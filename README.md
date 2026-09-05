@@ -201,48 +201,7 @@ The GUI integrates into the Torch Server window, matching the standard dark-them
 
 ---
 
-## 8. Building & Deployment
-
-### 1. Configure Torch Directory Path
-Open [`TorchRemoteCleanupPlugin.csproj`](TorchRemoteCleanupPlugin/TorchRemoteCleanupPlugin.csproj) and verify `<TorchDir>`:
-```xml
-<TorchDir>C:\SE_GVK_S10</TorchDir>
-```
-
-### 2. Build the Solution
-```bash
-dotnet build -c Release TorchRemoteCleanupPlugin\TorchRemoteCleanupPlugin.csproj
-```
-The build automatically creates and deploys the zip archive:
-```
-C:\SE_GVK_S10\Plugins\RemoteGridAbandon.zip
-├── RemoteAbandon.dll
-├── RemoteAbandon.pdb
-└── manifest.xml
-```
-
----
-
-## 9. In-Game Testing Checklist
-
-1. **GUI & Persistence Verification**:
-   - [ ] Start Torch Server $\rightarrow$ Open **Remote Grid Abandon** tab.
-   - [ ] Verify both **Configuration** and **Live Telemetry** tabs are populated.
-   - [ ] Modify a setting (e.g. Enable Debug Logging) and verify changes auto-apply or click **Save to Disk**.
-2. **In-Game Functionality**:
-   - [ ] Spawn a test grid with armor, thrusters, and a beacon.
-   - [ ] Open Terminal $\rightarrow$ **Info Tab** $\rightarrow$ Click **"X"** on the test ship.
-   - [ ] Verify:
-     - The ship **remains in world as a derelict** (not deleted).
-     - The beacon is destroyed.
-     - PCU is immediately refunded and grid removed from player's Info tab list.
-     - Dual HUD notification and in-game chat message are received.
-     - The **Live Telemetry** tab in Torch GUI increments the Grids Abandoned counter.
-     - `RemoteAbandon.log` in plugin storage records the timestamped event.
-
----
-
-## 10. License & Credits
+## 8. License & Credits
 
 * **Author**: GVK Modding Team
 * **Target Server**: GV - Deserts of Kharak (GVK)
