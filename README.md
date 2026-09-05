@@ -205,4 +205,4 @@ The GUI integrates into the Torch Server window, matching the standard dark-them
 
 * **Author**: GVK Modding Team
 * **Target Server**: GV - Deserts of Kharak (GVK)
-* **License**: MIT
+* **License**: [GNU AGPL-3.0](LICENSE.txt)
