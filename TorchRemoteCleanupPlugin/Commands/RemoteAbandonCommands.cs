@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text;
 using Torch.Commands;
 using Torch.Commands.Permissions;
@@ -31,7 +32,7 @@ namespace RemoteAbandon.Commands
             var sb = new StringBuilder();
             sb.AppendLine("=== Remote Grid Abandon Info ===");
             sb.AppendLine($"Status: {(cfg.Enabled ? "ACTIVE" : "DISABLED")}");
-            sb.AppendLine("• When you click 'X' (Remove) on a grid in the Info Tab:");
+            sb.AppendLine("- When you click 'X' (Remove) on a grid in the Info Tab:");
             sb.AppendLine($"  - Beacons destroyed: {(cfg.DestroyPlayerBeacons ? "YES (Your beacons removed)" : "NO")}");
             sb.AppendLine($"  - Other players' beacons: {(cfg.PreserveOtherPlayerBeacons ? "PRESERVED" : "Not preserved")}");
             sb.AppendLine($"  - Block ownership: {(cfg.ResetTerminalOwnershipToNobody ? "Wiped to Nobody" : "Retained")}");
@@ -157,109 +158,149 @@ namespace RemoteAbandon.Commands
             }
 
             var cfg = Plugin.Config;
-            try
-            {
-                switch (property.ToLowerInvariant())
-                {
-                    case "enabled":
-                        cfg.Enabled = bool.Parse(value);
-                        break;
-                    case "debug":
-                    case "enabledebuglogging":
-                        cfg.EnableDebugLogging = bool.Parse(value);
-                        break;
-                    case "logfile":
-                    case "writededicatedlogfile":
-                        cfg.WriteDedicatedLogFile = bool.Parse(value);
-                        break;
-                    case "playercommands":
-                    case "enableplayercommands":
-                        cfg.EnablePlayerCommands = bool.Parse(value);
-                        break;
-                    case "destroybeacons":
-                    case "destroyplayerbeacons":
-                        cfg.DestroyPlayerBeacons = bool.Parse(value);
-                        break;
-                    case "preserveotherbeacons":
-                    case "preserveotherplayerbeacons":
-                        cfg.PreserveOtherPlayerBeacons = bool.Parse(value);
-                        break;
-                    case "depower":
-                    case "depowergridonabandon":
-                        cfg.DepowerGridOnAbandon = bool.Parse(value);
-                        break;
-                    case "resetownership":
-                    case "resetterminalownershiptonobody":
-                        cfg.ResetTerminalOwnershipToNobody = bool.Parse(value);
-                        break;
-                    case "transferauthorship":
-                    case "transferauthorshiptonobody":
-                        cfg.TransferAuthorshipToNobody = bool.Parse(value);
-                        break;
-                    case "customownerid":
-                        cfg.CustomOwnerIdentityId = long.Parse(value);
-                        break;
-                    case "combatcheck":
-                    case "preventabandonincombat":
-                        cfg.PreventAbandonInCombat = bool.Parse(value);
-                        break;
-                    case "combatradius":
-                    case "combatcheckradius":
-                        cfg.CombatCheckRadius = float.Parse(value);
-                        break;
-                    case "damagecheck":
-                    case "preventabandonondamage":
-                    case "ondamage":
-                        cfg.PreventAbandonOnDamage = bool.Parse(value);
-                        break;
-                    case "damagecooldown":
-                    case "damagecooldownseconds":
-                        cfg.DamageCooldownSeconds = int.Parse(value);
-                        break;
-                    case "maxpcu":
-                    case "maxgridpcu":
-                        cfg.MaxGridPCU = int.Parse(value);
-                        break;
-                    case "notify":
-                    case "sendnotificationtoplayer":
-                        cfg.SendNotificationToPlayer = bool.Parse(value);
-                        break;
-                    case "hudnotify":
-                    case "sendhudnotification":
-                        cfg.SendHudNotification = bool.Parse(value);
-                        break;
-                    case "chatnotify":
-                    case "sendchatnotification":
-                        cfg.SendChatNotification = bool.Parse(value);
-                        break;
-                    case "message":
-                    case "notificationmessage":
-                        cfg.NotificationMessage = value;
-                        break;
-                    case "combatmessage":
-                    case "combatblockedmessage":
-                        cfg.CombatBlockedMessage = value;
-                        break;
-                    case "damagemessage":
-                    case "damageblockedmessage":
-                        cfg.DamageBlockedMessage = value;
-                        break;
-                    case "pcumessage":
-                    case "pcublockedmessage":
-                        cfg.PcuBlockedMessage = value;
-                        break;
-                    default:
-                        Context.Respond($"Unknown setting '{property}'. Valid options: enabled, debug, logfile, playercommands, destroybeacons, preserveotherbeacons, depower, resetownership, transferauthorship, customownerid, combatcheck, combatradius, damagecheck, damagecooldown, maxpcu, notify, hudnotify, chatnotify, message, combatmessage, damagemessage, pcumessage.");
-                        return;
-                }
 
-                Plugin.SaveConfig();
-                Context.Respond($"Remote Grid Abandon: Set '{property}' to '{value}'. Configuration saved.");
-            }
-            catch (Exception ex)
+            bool TryParseBool(out bool boolVal)
             {
-                Context.Respond($"Error setting '{property}': {ex.Message}");
+                if (bool.TryParse(value, out boolVal)) return true;
+                Context.Respond($"Invalid boolean value '{value}' for property '{property}'. Expected 'true' or 'false'.");
+                return false;
             }
+
+            bool TryParseInt(out int intVal)
+            {
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal)) return true;
+                Context.Respond($"Invalid integer value '{value}' for property '{property}'. Expected a whole number.");
+                return false;
+            }
+
+            bool TryParseLong(out long longVal)
+            {
+                if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out longVal)) return true;
+                Context.Respond($"Invalid integer value '{value}' for property '{property}'. Expected a 64-bit integer.");
+                return false;
+            }
+
+            bool TryParseFloat(out float floatVal)
+            {
+                if (float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out floatVal)) return true;
+                Context.Respond($"Invalid numeric value '{value}' for property '{property}'. Expected a decimal number.");
+                return false;
+            }
+
+            switch (property.ToLowerInvariant())
+            {
+                case "enabled":
+                    if (!TryParseBool(out bool enabledVal)) return;
+                    cfg.Enabled = enabledVal;
+                    break;
+                case "debug":
+                case "enabledebuglogging":
+                    if (!TryParseBool(out bool debugVal)) return;
+                    cfg.EnableDebugLogging = debugVal;
+                    break;
+                case "logfile":
+                case "writededicatedlogfile":
+                    if (!TryParseBool(out bool logfileVal)) return;
+                    cfg.WriteDedicatedLogFile = logfileVal;
+                    break;
+                case "playercommands":
+                case "enableplayercommands":
+                    if (!TryParseBool(out bool playerCmdsVal)) return;
+                    cfg.EnablePlayerCommands = playerCmdsVal;
+                    break;
+                case "destroybeacons":
+                case "destroyplayerbeacons":
+                    if (!TryParseBool(out bool destroyBeaconsVal)) return;
+                    cfg.DestroyPlayerBeacons = destroyBeaconsVal;
+                    break;
+                case "preserveotherbeacons":
+                case "preserveotherplayerbeacons":
+                    if (!TryParseBool(out bool preserveVal)) return;
+                    cfg.PreserveOtherPlayerBeacons = preserveVal;
+                    break;
+                case "depower":
+                case "depowergridonabandon":
+                    if (!TryParseBool(out bool depowerVal)) return;
+                    cfg.DepowerGridOnAbandon = depowerVal;
+                    break;
+                case "resetownership":
+                case "resetterminalownershiptonobody":
+                    if (!TryParseBool(out bool resetVal)) return;
+                    cfg.ResetTerminalOwnershipToNobody = resetVal;
+                    break;
+                case "transferauthorship":
+                case "transferauthorshiptonobody":
+                    if (!TryParseBool(out bool transferVal)) return;
+                    cfg.TransferAuthorshipToNobody = transferVal;
+                    break;
+                case "customownerid":
+                    if (!TryParseLong(out long ownerIdVal)) return;
+                    cfg.CustomOwnerIdentityId = ownerIdVal;
+                    break;
+                case "combatcheck":
+                case "preventabandonincombat":
+                    if (!TryParseBool(out bool combatCheckVal)) return;
+                    cfg.PreventAbandonInCombat = combatCheckVal;
+                    break;
+                case "combatradius":
+                case "combatcheckradius":
+                    if (!TryParseFloat(out float radiusVal)) return;
+                    cfg.CombatCheckRadius = radiusVal;
+                    break;
+                case "damagecheck":
+                case "preventabandonondamage":
+                case "ondamage":
+                    if (!TryParseBool(out bool dmgCheckVal)) return;
+                    cfg.PreventAbandonOnDamage = dmgCheckVal;
+                    break;
+                case "damagecooldown":
+                case "damagecooldownseconds":
+                    if (!TryParseInt(out int cooldownVal)) return;
+                    cfg.DamageCooldownSeconds = cooldownVal;
+                    break;
+                case "maxpcu":
+                case "maxgridpcu":
+                    if (!TryParseInt(out int maxPcuVal)) return;
+                    cfg.MaxGridPCU = maxPcuVal;
+                    break;
+                case "notify":
+                case "sendnotificationtoplayer":
+                    if (!TryParseBool(out bool notifyVal)) return;
+                    cfg.SendNotificationToPlayer = notifyVal;
+                    break;
+                case "hudnotify":
+                case "sendhudnotification":
+                    if (!TryParseBool(out bool hudVal)) return;
+                    cfg.SendHudNotification = hudVal;
+                    break;
+                case "chatnotify":
+                case "sendchatnotification":
+                    if (!TryParseBool(out bool chatVal)) return;
+                    cfg.SendChatNotification = chatVal;
+                    break;
+                case "message":
+                case "notificationmessage":
+                    cfg.NotificationMessage = value;
+                    break;
+                case "combatmessage":
+                case "combatblockedmessage":
+                    cfg.CombatBlockedMessage = value;
+                    break;
+                case "damagemessage":
+                case "damageblockedmessage":
+                    cfg.DamageBlockedMessage = value;
+                    break;
+                case "pcumessage":
+                case "pcublockedmessage":
+                    cfg.PcuBlockedMessage = value;
+                    break;
+                default:
+                    Context.Respond($"Unknown setting '{property}'. Valid options: enabled, debug, logfile, playercommands, destroybeacons, preserveotherbeacons, depower, resetownership, transferauthorship, customownerid, combatcheck, combatradius, damagecheck, damagecooldown, maxpcu, notify, hudnotify, chatnotify, message, combatmessage, damagemessage, pcumessage.");
+                    return;
+            }
+
+            Plugin.SaveConfig();
+            Context.Respond($"Remote Grid Abandon: Set '{property}' to '{value}'. Configuration saved.");
         }
     }
 }

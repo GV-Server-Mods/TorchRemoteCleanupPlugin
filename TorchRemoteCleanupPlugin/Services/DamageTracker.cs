@@ -5,13 +5,13 @@ using NLog;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.ModAPI;
+using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 
 namespace RemoteAbandon.Services
 {
     /// <summary>
-    /// Monitors Space Engineers game damage events and tracks the most recent damage timestamp
-    /// for grids to enforce anti-combat abandonment delay cooldowns.
+    /// Tracks damage timestamps on grids to enforce combat abandonment delay cooldowns.
     /// </summary>
     public static class DamageTracker
     {
@@ -20,7 +20,7 @@ namespace RemoteAbandon.Services
         private static bool _isRegistered = false;
 
         /// <summary>
-        /// Registers the damage event handler with the Space Engineers DamageSystem.
+        /// Registers the damage event handler and entity removal listener.
         /// </summary>
         public static void Init()
         {
@@ -32,6 +32,7 @@ namespace RemoteAbandon.Services
                 if (MyAPIGateway.Session?.DamageSystem != null)
                 {
                     MyAPIGateway.Session.DamageSystem.RegisterAfterDamageHandler(0, OnAfterDamageApplied);
+                    MyEntities.OnEntityRemove += OnEntityRemove;
                     _isRegistered = true;
                     Log.Info("DamageTracker registered with Space Engineers DamageSystem.");
                 }
@@ -47,72 +48,53 @@ namespace RemoteAbandon.Services
         }
 
         /// <summary>
-        /// Clears all stored damage timestamps and unregisters handlers upon session unload.
+        /// Clears stored damage timestamps and unregisters handlers.
         /// </summary>
         public static void Cleanup()
         {
+            if (_isRegistered)
+            {
+                MyEntities.OnEntityRemove -= OnEntityRemove;
+                _isRegistered = false;
+            }
+
             LastDamageTimes.Clear();
-            _isRegistered = false;
+        }
+
+        private static void OnEntityRemove(MyEntity entity)
+        {
+            if (entity is MyCubeGrid grid)
+            {
+                LastDamageTimes.TryRemove(grid.EntityId, out _);
+            }
         }
 
         /// <summary>
-        /// Handles the damage applied event and records the timestamp for the target grid.
+        /// Records the damage timestamp for the target grid. Called on every damage event.
         /// </summary>
-        /// <param name="target">The damaged object (block or grid).</param>
-        /// <param name="info">Information regarding the damage amount and type.</param>
         private static void OnAfterDamageApplied(object target, MyDamageInformation info)
         {
-            try
-            {
-                if (info.Amount <= 0f)
-                    return;
+            if (info.Amount <= 0f)
+                return;
 
-                long gridEntityId = 0;
-                if (target is MySlimBlock slimBlock && slimBlock.CubeGrid != null)
-                {
-                    gridEntityId = slimBlock.CubeGrid.EntityId;
-                }
-                else if (target is MyCubeBlock fatBlock && fatBlock.CubeGrid != null)
-                {
-                    gridEntityId = fatBlock.CubeGrid.EntityId;
-                }
-                else if (target is MyCubeGrid grid)
-                {
-                    gridEntityId = grid.EntityId;
-                }
-                else if (target is IMySlimBlock iSlim && iSlim.CubeGrid != null)
-                {
-                    gridEntityId = iSlim.CubeGrid.EntityId;
-                }
-                else if (target is IMyCubeGrid iGrid)
-                {
-                    gridEntityId = iGrid.EntityId;
-                }
+            var slim = target as MySlimBlock;
+            if (slim?.CubeGrid == null)
+                return;
 
-                if (gridEntityId != 0)
-                {
-                    LastDamageTimes[gridEntityId] = DateTime.UtcNow;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error processing damage event in DamageTracker.");
-            }
+            LastDamageTimes[slim.CubeGrid.EntityId] = DateTime.UtcNow;
         }
 
         /// <summary>
-        /// Checks if any grid in the provided construct (root grid and connected subgrids) has taken damage
-        /// within the specified cooldown duration.
+        /// Checks if any grid in the construct took damage within the cooldown window.
         /// </summary>
-        /// <param name="grids">Collection of cube grids in the construct.</param>
-        /// <param name="cooldownSeconds">Cooldown duration in seconds.</param>
-        /// <param name="remainingSeconds">Outputs the remaining cooldown time in seconds.</param>
-        /// <returns>True if the construct took damage within the cooldown window; otherwise, false.</returns>
         public static bool IsConstructInDamageCooldown(IEnumerable<MyCubeGrid> grids, double cooldownSeconds, out int remainingSeconds)
         {
             remainingSeconds = 0;
             if (grids == null || cooldownSeconds <= 0)
                 return false;
+
+            // Cold path cleanup to prevent unpruned dict growth
+            PurgeOldEntries(TimeSpan.FromSeconds(Math.Max(cooldownSeconds * 2, 300)));
 
             DateTime now = DateTime.UtcNow;
             DateTime mostRecentDamage = DateTime.MinValue;
@@ -143,9 +125,8 @@ namespace RemoteAbandon.Services
         }
 
         /// <summary>
-        /// Purges damage timestamps older than the specified max age to keep memory footprint minimal.
+        /// Purges damage timestamps older than maxAge.
         /// </summary>
-        /// <param name="maxAge">Maximum age threshold to retain.</param>
         public static void PurgeOldEntries(TimeSpan maxAge)
         {
             DateTime cutoff = DateTime.UtcNow - maxAge;

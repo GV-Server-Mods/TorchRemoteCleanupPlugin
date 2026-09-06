@@ -51,14 +51,12 @@ namespace RemoteAbandon
 
             try
             {
-                var sessionManager = Torch.Managers.GetManager(typeof(ITorchSessionManager)) as ITorchSessionManager;
-                if (sessionManager != null)
+                if (Torch.Managers.GetManager(typeof(ITorchSessionManager)) is ITorchSessionManager sessionManager)
                 {
                     sessionManager.SessionStateChanged += OnSessionStateChanged;
                 }
 
-                var patchManager = Torch.Managers.GetManager(typeof(PatchManager)) as PatchManager;
-                if (patchManager != null)
+                if (Torch.Managers.GetManager(typeof(PatchManager)) is PatchManager patchManager)
                 {
                     var ctx = patchManager.AcquireContext();
                     RemoteAbandonPatch.Patch(ctx);
@@ -115,16 +113,18 @@ namespace RemoteAbandon
         /// <summary>
         /// Saves current configuration settings to disk.
         /// </summary>
-        public void SaveConfig()
+        public bool SaveConfig()
         {
             try
             {
                 _config?.Save();
                 Log.Info("Remote Abandon configuration saved.");
+                return true;
             }
             catch (Exception ex)
             {
                 Log.Error(ex, "Failed to save Remote Abandon configuration!");
+                return false;
             }
         }
 
@@ -134,7 +134,7 @@ namespace RemoteAbandon
         /// <returns>WPF UserControl for the plugin tab.</returns>
         public UserControl GetControl()
         {
-            return _control ?? (_control = new RemoteAbandonControl(this));
+            return _control ??= new RemoteAbandonControl(this);
         }
 
         /// <summary>
@@ -142,15 +142,10 @@ namespace RemoteAbandon
         /// </summary>
         public override void Dispose()
         {
-            try
+            if (Torch?.Managers?.GetManager(typeof(ITorchSessionManager)) is ITorchSessionManager sessionManager)
             {
-                var sessionManager = Torch?.Managers?.GetManager(typeof(ITorchSessionManager)) as ITorchSessionManager;
-                if (sessionManager != null)
-                {
-                    sessionManager.SessionStateChanged -= OnSessionStateChanged;
-                }
+                sessionManager.SessionStateChanged -= OnSessionStateChanged;
             }
-            catch { }
 
             DamageTracker.Cleanup();
             Instance = null;

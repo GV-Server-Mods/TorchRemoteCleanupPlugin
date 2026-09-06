@@ -3,17 +3,21 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using RemoteAbandon.Config;
 using RemoteAbandon.Services;
 using RemoteAbandon.Utils;
 using NLog;
+using Sandbox.Definitions;
 using Sandbox.Engine.Multiplayer;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Blocks;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.World;
+using Sandbox.ModAPI;
 using Torch.Managers.PatchManager;
 using VRage.Game;
+using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRage.Network;
 using VRageMath;
@@ -26,6 +30,7 @@ namespace RemoteAbandon
     public static class RemoteAbandonPatch
     {
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+        private static readonly object DedicatedLogLock = new();
 
         /// <summary>
         /// Registers the Torch prefix patch on Keen's <see cref="MyBlockLimits.RemoveBlocksBuiltByID"/> method.
@@ -33,19 +38,16 @@ namespace RemoteAbandon
         /// <param name="ctx">Torch patch context to register the prefix on.</param>
         public static void Patch(PatchContext ctx)
         {
-            try
+            var targetMethod = typeof(MyBlockLimits).GetMethod(nameof(MyBlockLimits.RemoveBlocksBuiltByID), BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            if (targetMethod != null)
             {
-                var targetMethod = typeof(MyBlockLimits).GetMethod(nameof(MyBlockLimits.RemoveBlocksBuiltByID), BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                if (targetMethod != null)
-                {
-                    var prefixMethod = typeof(RemoteAbandonPatch).GetMethod(nameof(Prefix), BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                    ctx.GetPattern(targetMethod).Prefixes.Add(prefixMethod);
-                    Log.Info("Registered MyBlockLimits.RemoveBlocksBuiltByID prefix patch.");
-                }
+                var prefixMethod = typeof(RemoteAbandonPatch).GetMethod(nameof(Prefix), BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                ctx.GetPattern(targetMethod).Prefixes.Add(prefixMethod);
+                Log.Info("Registered MyBlockLimits.RemoveBlocksBuiltByID prefix patch.");
             }
-            catch (Exception ex)
+            else
             {
-                Log.Error(ex, "Failed to patch MyBlockLimits.RemoveBlocksBuiltByID!");
+                Log.Error("Failed to find MyBlockLimits.RemoveBlocksBuiltByID method to patch!");
             }
         }
 
@@ -74,7 +76,7 @@ namespace RemoteAbandon
                 if (senderIdentityId == 0L)
                 {
                     Log.Warn($"Remote abandon request from unknown Steam ID: {senderSteamId}");
-                    return false;
+                    return true;
                 }
 
                 // 2. Fetch the target grid
@@ -85,7 +87,7 @@ namespace RemoteAbandon
                 }
 
                 // 3. Max PCU Limit check
-                if (config != null && config.MaxGridPCU > 0 && rootGrid.BlocksPCU > config.MaxGridPCU)
+                if (config.MaxGridPCU > 0 && rootGrid.BlocksPCU > config.MaxGridPCU)
                 {
                     Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' exceeding max PCU limit ({rootGrid.BlocksPCU} > {config.MaxGridPCU}).");
                     string template = config.PcuBlockedMessage ?? "Cannot abandon grid '{0}': PCU exceeds limit ({1:N0} / {2:N0}).";
@@ -101,66 +103,63 @@ namespace RemoteAbandon
                     : [rootGrid];
 
                 // 5. Combat & Anti-Exploit Restrictions
-                if (config != null)
+                // 5a. Proximity Check (hostile players nearby)
+                if (config.PreventAbandonInCombat)
                 {
-                    // 5a. Proximity Check (hostile players nearby)
-                    if (config.PreventAbandonInCombat)
+                    Vector3D gridPos = rootGrid.PositionComp.GetPosition();
+                    double checkRadiusSq = config.CombatCheckRadius * config.CombatCheckRadius;
+                    bool enemyNearby = false;
+
+                    foreach (var player in MySession.Static.Players.GetOnlinePlayers())
                     {
-                        Vector3D gridPos = rootGrid.PositionComp.GetPosition();
-                        double checkRadiusSq = config.CombatCheckRadius * config.CombatCheckRadius;
-                        bool enemyNearby = false;
+                        if (player == null || player.Identity == null || player.Identity.IdentityId == senderIdentityId)
+                            continue;
 
-                        foreach (var player in MySession.Static.Players.GetOnlinePlayers())
+                        if (Vector3D.DistanceSquared(player.GetPosition(), gridPos) <= checkRadiusSq)
                         {
-                            if (player == null || player.Identity == null || player.Identity.IdentityId == senderIdentityId)
-                                continue;
-
-                            if (Vector3D.DistanceSquared(player.GetPosition(), gridPos) <= checkRadiusSq)
+                            var relation = MyIDModule.GetRelationPlayerPlayer(senderIdentityId, player.Identity.IdentityId);
+                            if (relation == MyRelationsBetweenPlayers.Enemies)
                             {
-                                var relation = MyIDModule.GetRelationPlayerPlayer(senderIdentityId, player.Identity.IdentityId);
-                                if (relation.ToString().Equals("Enemies", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    enemyNearby = true;
-                                    break;
-                                }
+                                enemyNearby = true;
+                                break;
                             }
-                        }
-
-                        if (enemyNearby)
-                        {
-                            Plugin.Instance?.Statistics?.RecordCombatBlocked();
-                            Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' while enemy player is within {config.CombatCheckRadius}m combat radius.");
-                            string template = config.CombatBlockedMessage ?? "Cannot abandon grid '{0}': Hostile players detected within {1}m!";
-                            string msg = string.Format(template, rootGrid.DisplayName, (int)config.CombatCheckRadius);
-                            ChatUtils.SendPlayerFeedback(config, senderSteamId, msg, isError: true);
-                            return false;
                         }
                     }
 
-                    // 5b. Damage Cooldown Check (grid took damage recently)
-                    if (config.PreventAbandonOnDamage && config.DamageCooldownSeconds > 0)
+                    if (enemyNearby)
                     {
-                        if (DamageTracker.IsConstructInDamageCooldown(allGrids, config.DamageCooldownSeconds, out int remainingSeconds))
-                        {
-                            Plugin.Instance?.Statistics?.RecordCombatBlocked();
-                            Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' which took damage recently ({remainingSeconds}s cooldown remaining).");
-                            string template = config.DamageBlockedMessage ?? "Cannot abandon grid '{0}': Grid took damage recently! Please wait {1}s.";
-                            string msg = string.Format(template, rootGrid.DisplayName, remainingSeconds);
-                            ChatUtils.SendPlayerFeedback(config, senderSteamId, msg, isError: true);
-                            return false;
-                        }
+                        Plugin.Instance?.Statistics?.RecordCombatBlocked();
+                        Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' while enemy player is within {config.CombatCheckRadius}m combat radius.");
+                        string template = config.CombatBlockedMessage ?? "Cannot abandon grid '{0}': Hostile players detected within {1}m!";
+                        string msg = string.Format(template, rootGrid.DisplayName, (int)config.CombatCheckRadius);
+                        ChatUtils.SendPlayerFeedback(config, senderSteamId, msg, isError: true);
+                        return false;
+                    }
+                }
+
+                // 5b. Damage Cooldown Check (grid took damage recently)
+                if (config.PreventAbandonOnDamage && config.DamageCooldownSeconds > 0)
+                {
+                    if (DamageTracker.IsConstructInDamageCooldown(allGrids, config.DamageCooldownSeconds, out int remainingSeconds))
+                    {
+                        Plugin.Instance?.Statistics?.RecordCombatBlocked();
+                        Log.Warn($"Player {senderSteamId} attempted to abandon grid '{rootGrid.DisplayName}' which took damage recently ({remainingSeconds}s cooldown remaining).");
+                        string template = config.DamageBlockedMessage ?? "Cannot abandon grid '{0}': Grid took damage recently! Please wait {1}s.";
+                        string msg = string.Format(template, rootGrid.DisplayName, remainingSeconds);
+                        ChatUtils.SendPlayerFeedback(config, senderSteamId, msg, isError: true);
+                        return false;
                     }
                 }
 
                 int totalBeaconsDestroyed = 0;
                 int totalPcuRefunded = 0;
 
-                bool destroyBeacons = config?.DestroyPlayerBeacons ?? true;
-                bool preserveOtherBeacons = config?.PreserveOtherPlayerBeacons ?? true;
-                bool depowerGrid = config?.DepowerGridOnAbandon ?? false;
-                bool resetOwnership = config?.ResetTerminalOwnershipToNobody ?? true;
-                bool transferAuthorship = config?.TransferAuthorshipToNobody ?? true;
-                long targetOwnerId = config?.CustomOwnerIdentityId ?? 0L;
+                bool destroyBeacons = config.DestroyPlayerBeacons;
+                bool preserveOtherBeacons = config.PreserveOtherPlayerBeacons;
+                bool depowerGrid = config.DepowerGridOnAbandon;
+                bool resetOwnership = config.ResetTerminalOwnershipToNobody;
+                bool transferAuthorship = config.TransferAuthorshipToNobody;
+                long targetOwnerId = config.CustomOwnerIdentityId;
 
                 foreach (MyCubeGrid grid in allGrids)
                 {
@@ -173,7 +172,7 @@ namespace RemoteAbandon
                         var beaconsToRemove = new List<MySlimBlock>();
                         foreach (MySlimBlock slim in grid.CubeBlocks)
                         {
-                            if (slim.FatBlock is MyBeacon beacon)
+                            if (slim.FatBlock is IMyBeacon beacon)
                             {
                                 bool ownedByOther = beacon.OwnerId != 0L && beacon.OwnerId != senderIdentityId;
                                 if (preserveOtherBeacons && ownedByOther)
@@ -204,7 +203,7 @@ namespace RemoteAbandon
                         int depoweredCount = 0;
                         foreach (MySlimBlock slim in grid.CubeBlocks)
                         {
-                            if (slim.FatBlock is Sandbox.ModAPI.IMyPowerProducer powerProducer)
+                            if (slim.FatBlock is IMyPowerProducer powerProducer)
                             {
                                 powerProducer.Enabled = false;
                                 depoweredCount++;
@@ -231,7 +230,8 @@ namespace RemoteAbandon
                         int ownershipResetCount = 0;
                         foreach (MySlimBlock slim in grid.CubeBlocks)
                         {
-                            if (slim.FatBlock is MyTerminalBlock terminalBlock && slim.FatBlock is not MyBeacon)
+                            // MyBeacon inherits from MyTerminalBlock; exclude IMyBeacon so preserved beacons keep original owner
+                            if (slim.FatBlock is MyTerminalBlock terminalBlock && terminalBlock is not IMyBeacon)
                             {
                                 if (terminalBlock.OwnerId != 0L)
                                 {
@@ -248,7 +248,18 @@ namespace RemoteAbandon
                     // D. Transfer authorship to refund PCU on server and client
                     if (transferAuthorship)
                     {
-                        totalPcuRefunded += grid.BlocksPCU;
+                        int gridRefundedPcu = 0;
+                        foreach (MySlimBlock slim in grid.CubeBlocks)
+                        {
+                            if (slim.BuiltBy == senderIdentityId)
+                            {
+                                gridRefundedPcu += slim.ComponentStack.IsFunctional
+                                    ? slim.BlockDefinition.PCU
+                                    : MyCubeBlockDefinition.PCU_CONSTRUCTION_STAGE_COST;
+                            }
+                        }
+
+                        totalPcuRefunded += gridRefundedPcu;
                         grid.TransferBlocksBuiltByID(senderIdentityId, targetOwnerId);
 
                         MyMultiplayer.RaiseStaticEvent(
@@ -259,7 +270,7 @@ namespace RemoteAbandon
                         );
 
                         if (config.EnableDebugLogging)
-                            Log.Info($"[DEBUG] Step D: Transferred authorship for {grid.BlocksPCU} PCU on grid '{grid.DisplayName}'");
+                            Log.Info($"[DEBUG] Step D: Transferred authorship for {gridRefundedPcu} PCU on grid '{grid.DisplayName}'");
                     }
                 }
 
@@ -284,22 +295,28 @@ namespace RemoteAbandon
                 }
 
                 // 7. Write to dedicated plugin log file
-                if (config?.WriteDedicatedLogFile == true && Plugin.Instance != null)
+                if (config.WriteDedicatedLogFile && Plugin.Instance != null)
                 {
-                    try
+                    string logPath = Path.Combine(Plugin.Instance.StoragePath, "RemoteAbandon.log");
+                    string logLine = $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC] {logMsg}{Environment.NewLine}";
+                    ThreadPool.QueueUserWorkItem(_ =>
                     {
-                        string logPath = Path.Combine(Plugin.Instance.StoragePath, "RemoteAbandon.log");
-                        string logLine = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {logMsg}{Environment.NewLine}";
-                        File.AppendAllText(logPath, logLine);
-                    }
-                    catch (Exception logEx)
-                    {
-                        Log.Warn(logEx, "Failed to write to dedicated RemoteAbandon.log file.");
-                    }
+                        try
+                        {
+                            lock (DedicatedLogLock)
+                            {
+                                File.AppendAllText(logPath, logLine);
+                            }
+                        }
+                        catch (Exception logEx)
+                        {
+                            Log.Warn(logEx, "Failed to write to dedicated RemoteAbandon.log file.");
+                        }
+                    });
                 }
 
                 // 8. Send notification to player
-                string successTemplate = config?.NotificationMessage ?? "Grid '{0}' was abandoned as a derelict. PCU refunded.";
+                string successTemplate = config.NotificationMessage ?? "Grid '{0}' was abandoned as a derelict. PCU refunded.";
                 string successMsg = string.Format(successTemplate, rootGrid.DisplayName);
                 ChatUtils.SendPlayerFeedback(config, senderSteamId, successMsg, isError: false);
 

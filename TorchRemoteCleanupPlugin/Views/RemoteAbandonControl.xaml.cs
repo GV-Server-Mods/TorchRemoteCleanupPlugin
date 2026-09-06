@@ -21,14 +21,13 @@ namespace RemoteAbandon.Views
 
         private void SaveButton_OnClick(object sender, RoutedEventArgs e)
         {
-            try
+            if (Plugin?.SaveConfig() == true)
             {
-                Plugin?.SaveConfig();
                 MessageBox.Show("Remote Grid Abandon configuration saved successfully!", "Remote Grid Abandon", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            catch (Exception ex)
+            else
             {
-                MessageBox.Show($"Failed to save configuration: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show("Failed to save configuration! Check the server logs for details.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

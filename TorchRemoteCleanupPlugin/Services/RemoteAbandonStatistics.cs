@@ -48,7 +48,7 @@ namespace RemoteAbandon.Services
 
             LastAbandonedGridName = gridName ?? "Unknown";
             LastAbandonedPlayerSteamId = steamId;
-            LastAbandonedTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            LastAbandonedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC");
 
             OnPropertyChanged(nameof(TotalGridsAbandoned));
             OnPropertyChanged(nameof(TotalSubgridsProcessed));

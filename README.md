@@ -103,7 +103,18 @@ flowchart TD
 * **Recursive Safe Iterator**: Traverses `MyCubeGridGroups.Static.Physical` and `Mechanical` to ensure every attached subpart has its beacons stripped and authorship cleared simultaneously, preventing orphan blocks from locking player PCU.
 
 ### C. Dedicated Audit Logging (`RemoteAbandon.log`)
-* Every abandonment event writes an immutable log record with timestamp, player Steam ID, player display name, grid name, block count, and total PCU refunded to assist server admins with auditing and dispute resolution.
+* Every abandonment event writes an immutable log record with timestamp, player Steam ID, player display name, grid name, block count, and total PCU refunded to assist server admins with auditing and dispute resolution. Offloaded asynchronously to `ThreadPool` with thread locking to prevent main-thread sim-speed hitching.
+
+### D. Design Notes & Space Engineers Engine Quirks
+
+* **Keen Block Inheritance Gotcha (`MyBeacon` & `IMyBeacon`)**:
+  In Keen's object model, `MyBeacon` derives from `MyFunctionalBlock`, which derives from `MyTerminalBlock` (`MyEntity` &rarr; `MyCubeBlock` &rarr; `MyTerminalBlock` &rarr; `MyFunctionalBlock` &rarr; `MyBeacon`). Consequently, `slim.FatBlock is MyTerminalBlock` is **true** for beacons. To prevent the terminal ownership reset routine (Step C) from wiping ownership on beacons preserved in Step A (e.g. allied claim beacons or NPC scrap markers), the check explicitly filters `terminalBlock is not IMyBeacon`. Using the `IMyBeacon` interface also ensures full compatibility with any modded beacon definitions.
+* **Bitmap Font Limitations in In-Game Chat**:
+  Space Engineers uses custom bitmap font sheets for in-game chat and HUD toasts. Non-ASCII Unicode characters (such as bullets `•` / `U+2022`) lack glyph definitions in standard SE fonts and render as missing-glyph "tofu" boxes on player screens. Command outputs strictly use ASCII hyphen bullets (`- `) to guarantee clean in-game presentation.
+* **DamageSystem Dispatch & Hot-Path Efficiency**:
+  The Space Engineers `DamageSystem` fires `RaiseAfterDamageApplied` on every damage pulse (every grinder tick, deformation event, or explosive fragment — potentially thousands per second in heavy combat). In Keen's engine, grid damage events exclusively pass concrete `MySlimBlock` references; fat blocks and grids are never passed directly to this event. `DamageTracker` patterns directly on `target as MySlimBlock` with zero allocations and no `try/catch` in the hot path.
+* **PCU Authorship vs. Grid PCU Accounting**:
+  `grid.BlocksPCU` reflects total construct PCU across all builders. However, `grid.TransferBlocksBuiltByID(senderIdentityId, ...)` only transfers and refunds blocks where `slim.BuiltBy == senderIdentityId`. To prevent telemetry skew on captured derelicts or multi-builder constructs, the plugin calculates player PCU refunds strictly from blocks authored by the abandoning identity.
 
 ---
 
